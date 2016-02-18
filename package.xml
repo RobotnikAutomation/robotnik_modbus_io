@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package>
+  <name>robotnik_modbus_io</name>
+  <version>0.0.1</version>
+  <description>
+	   The robotnik_modbus_io package allows to separate the
+	   logic layer and de io control layer of decentralized peripheral
+	   I/O based in modbus devices (usually Phoenix Contact).
+  </description>
+
+  <maintainer email="info@robotnik.es">Robotnik</maintainer>
+
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>self_test</build_depend>
+  <build_depend>diagnostic_updater</build_depend>
+  <build_depend>std_srvs</build_depend>
+  <build_depend>robotnik_msgs</build_depend>
+  <build_depend>libmodbus-dev</build_depend>
+
+  <run_depend>roscpp</run_depend>
+  <run_depend>self_test</run_depend>
+  <run_depend>diagnostic_updater</run_depend>
+  <run_depend>std_srvs</run_depend>
+  <run_depend>robotnik_msgs</run_depend>
+
+</package>
