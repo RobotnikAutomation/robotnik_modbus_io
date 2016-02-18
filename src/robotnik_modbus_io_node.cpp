@@ -291,38 +291,40 @@ public:
 		// Adress	 Description
 		// 0000 	 1 to 8 inputs module IL ETH
 		// 0001 	 1 to 4 outuputs module IL ETH
-
+		
+		int16_t x;
 		// Read digital 16 bit inputs registers. Each bit is an input
 		modbus_read_registers(mb_, digital_inputs_addr_, 1, tab_reg_);
 		//ROS_INFO("elevator_modbus_io::getData - Read %d ",tab_reg_[0]);
-		//int16_t x = tab_reg_[0];
-		din_ = tab_reg_[0];
-		//din_ = x;
-		/*for (int i=0; i<8; i++) {
+		x = tab_reg_[0];
+		//din_ = tab_reg_[0];
+		din_ = x;
+		for (int i=0; i<8; i++) {
 			data.digital_inputs[i] = x&1;
 			x>>=1;
-		}*/
-		for (int i=0; i<8; i++) {
+		}
+		/*for (int i=0; i<8; i++) {
 			data.digital_inputs[i] = din_&1;
 			din_>>=1;
-		}
+		}*/
 
 		// Read digital outputs
 		// modbus_read_registers(mb_, 1, 1, tab_reg_);
 		//modbus_read_registers(mb_, digital_outputs_addr1_, 1, tab_reg_); //384
 		modbus_read_registers(mb_, digital_outputs_addr_, 1, tab_reg_);
-		//dout_ = x = tab_reg_[0];
-		dout_ = tab_reg_[0];
-		/*dout384_ = dout_;
+		x = tab_reg_[0];
+		dout_ = x;
+		//dout_ = tab_reg_[0];
+		//dout384_ = dout_;
 		for (int i=0; i<8; i++) {
 			data.digital_outputs[i] = x&1;
 			x>>=1;
-		}*/
+		}
 		
-		for (int i=0; i<8; i++) {
+		/*for (int i=0; i<8; i++) {
 			data.digital_outputs[i] = dout_&1;
 			dout_>>=1;
-		}
+		}*/
 		
 		/*
 		modbus_read_registers(mb_, digital_outputs_addr2_, 1, tab_reg_); //385
