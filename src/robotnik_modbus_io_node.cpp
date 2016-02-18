@@ -374,14 +374,19 @@ public:
 		int out = req.output;
 		
 		if(out <= 0){
-			register_value = 0;
+			if (req.value){
+				register_value = 0xFF;
+				ROS_INFO("modbus_io::write_digital_output: ALL OUTPUTS ENABLED (out = %d)", out);
+			}else{
+				register_value = 0x00;
+				ROS_INFO("modbus_io::write_digital_output: ALL OUTPUTS DISABLED (out = %d)", out);
+			}
 			iret=modbus_write_register(mb_, digital_outputs_addr_, register_value);
-			ROS_INFO("modbus_io::write_digital_output: OUTPUTS DISABLED (out = %d)", out);
 		}else{
 			req.output -= 1;
-			if(req.output > this->digital_outputs_){
+			if(req.output > this->digital_outputs_-1){
 				res.ret = false;
-				ROS_ERROR("modbus_io::write_digital_output: OUTPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output, this->digital_outputs_);
+				ROS_ERROR("modbus_io::write_digital_output: OUTPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output+1, this->digital_outputs_);
 				return false;
 			}else{
 				shift_bit = (uint16_t) 1<<req.output; //shifts req.output number to the left
@@ -391,7 +396,7 @@ public:
 					register_value = dout_ & ~shift_bit;
 				}
 				iret=modbus_write_register(mb_, digital_outputs_addr_, register_value);
-				ROS_INFO("modbus_io::write_digital_output service request: OUTPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value );
+				ROS_INFO("modbus_io::write_digital_output service request: OUTPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
 			}
 		}
 		if (iret < 0) {
@@ -400,7 +405,6 @@ public:
 			res.ret = true;
 		}
 		return res.ret;
-		
 	}
 			
 		/*
