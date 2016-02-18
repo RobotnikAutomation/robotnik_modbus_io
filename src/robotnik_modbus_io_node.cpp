@@ -170,8 +170,8 @@ public:
 
 		din_= 0;
 		dout_= 0;
-		dout384_ = 0;
-        dout385_ = 0;
+		//dout384_ = 0;
+        //dout385_ = 0;
     }
 
 	//Destructor
@@ -307,6 +307,8 @@ public:
 			data.digital_inputs[i] = din_&1;
 			din_>>=1;
 		}*/
+		
+		//ROS_INFO("modbus_io::write_getData: VALUE=%d", (int)tab_reg_[0]);
 
 		// Read digital outputs
 		// modbus_read_registers(mb_, 1, 1, tab_reg_);
@@ -468,8 +470,45 @@ public:
 		robotnik_msgs::set_digital_output::Request &req,
 		robotnik_msgs::set_digital_output::Response &res
 	){
+		
+		int iret;
+		uint16_t register_value, shift_bit;	//register value, bit
+		int in = req.output;
+		
+		if(in <= 0){
+			if (req.value){
+				register_value = 0xFF;
+				ROS_INFO("modbus_io::write_digital_input: ALL INPUTS ENABLED (in = %d)", in);
+			}else{
+				register_value = 0x00;
+				ROS_INFO("modbus_io::write_digital_input: ALL INPUTS DISABLED (in = %d)", in);
+			}
+			iret=modbus_write_register(mb_, digital_inputs_addr_, register_value);
+		}else{
+			req.output -= 1;
+			if(req.output > this->digital_inputs_-1){
+				res.ret = false;
+				ROS_ERROR("modbus_io::write_digital_input: INPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output+1, this->digital_inputs_);
+				return false;
+			}else{
+				shift_bit = (uint16_t) 1<<req.output; //shifts req.output number to the left
+				if (req.value){
+					register_value = din_ | shift_bit;
+				}else{
+					register_value = din_ & ~shift_bit;
+				}
+				iret=modbus_write_register(mb_, digital_inputs_addr_, register_value);
+				ROS_INFO("modbus_io::write_digital_input service request: INPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
+			}
+		}
+		if (iret < 0) {
+			res.ret = false;
+		}else{
+			res.ret = true;
+		}
+		return res.ret;
 
-		if ((req.output > this->digital_inputs_)) {
+		/*if ((req.output > this->digital_inputs_)) {
 			res.ret = false;
 			ROS_ERROR("modbus_io::write_digital_input: Error on the output number %d. Out of range [1 -> %d]", req.output, this->digital_inputs_);
 			return false;
@@ -504,7 +543,7 @@ public:
 		}else{
 			res.ret = true;
 		}
-		return res.ret;
+		return res.ret;*/
 	}
 
 
