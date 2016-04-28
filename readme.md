@@ -1,4 +1,4 @@
-#elevator_controller_interface
+#robotnik_modbus_io
 
 ##Dependencies
 
@@ -27,13 +27,13 @@ To test the component:
 * Run the node
 
 ``` 
-$ roslaunch elevator_controller_interface ave_maria.launch
+$ roslaunch robotnik_modbus_io robotnik_modbus_io.launch
 ```
 
 * View digital and analog input status
 
 ```
-$ rostopic echo /elevator_controller_interface/input_output
+$ rostopic echo /robotnik_modbus_io/input_output
 
 digital_inputs: [False, True, False, True, True, False, False, False]
 digital_outputs: [False, False, False, False, False, False, False, False]
@@ -46,10 +46,10 @@ analog_outputs: []
 
 ```
 # enables the output 3
-$ rosservice call /elevator_controller_interface/write_digital_output 3 true
+$ rosservice call /robotnik_modbus_io/write_digital_output 3 true
 # disables the output 3
-$ rosservice call /elevator_controller_interface/write_digital_output 3 true
+$ rosservice call /robotnik_modbus_io/write_digital_output 3 true
 # disables all the outputs
-$ rosservice call /elevator_controller_interface/write_digital_output 0 false
+$ rosservice call /robotnik_modbus_io/write_digital_output 0 false
 ```
 
