@@ -83,9 +83,9 @@ public:
 
 	ros::NodeHandle node_handle_;
 	ros::NodeHandle private_node_handle_;
-	ros::Publisher elevator_modbus_io_data_pub_;
-	ros::ServiceServer elevator_modbus_io_write_digital_srv_;
-	ros::ServiceServer elevator_modbus_io_write_digital_input_srv_;
+	ros::Publisher modbus_io_data_pub_;
+	ros::ServiceServer modbus_io_write_digital_srv_;
+	ros::ServiceServer modbus_io_write_digital_input_srv_;
 
 	bool running;
 	// Config params
@@ -121,7 +121,7 @@ public:
 	freq_diag_(diagnostic_updater::FrequencyStatusParam(&desired_freq_, &desired_freq_, 0.05))
 	{
 		running = false;
-		ros::NodeHandle modbus_node_handle(node_handle_, "modbus_io");
+		ros::NodeHandle modbus_node_handle(node_handle_, "robotnik_modbus_io");
 		// READ PARAMS
 		private_node_handle_.param("ip_address", ip_address_, string("127.0.0.1"));
 		private_node_handle_.param("port", port_, 502);
@@ -130,7 +130,7 @@ public:
 		private_node_handle_.param("digital_inputs_addr", digital_inputs_addr_, 0);
 		//private_node_handle_.param("digital_outputs_addr1", digital_outputs_addr1_, 384);
 		//private_node_handle_.param("digital_outputs_addr2", digital_outputs_addr2_, 385); //not used
-		private_node_handle_.param("digital_outputs_adrr", digital_outputs_addr_, 100); //new used
+		private_node_handle_.param("digital_outputs_addr", digital_outputs_addr_, 100); //new used
 
 		// Checks the min num of digital outputs
 		/*if(digital_outputs_ < MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS){
@@ -147,15 +147,15 @@ public:
 		//ROS_INFO("elevator_modbus_io: Settings -> DO = %d (register %d %d), DI = %d (register %d)",
 		//digital_outputs_, digital_outputs_addr1_, digital_outputs_addr2_, digital_inputs_, digital_inputs_addr_ );
 		
-		ROS_INFO("modbus_io: Settings -> DO = %d (register %d), DI = %d (register %d)",
-		digital_outputs_, digital_outputs_addr_, digital_inputs_, digital_inputs_addr_ );
+		ROS_INFO("robotnik_modbus_io: Settings -> DO = %d (register %d), DI = %d (register %d)",
+		digital_outputs_, digital_outputs_addr_, digital_inputs_, digital_inputs_addr_);
 
-		ROS_INFO("modbus_io: %d", digital_outputs_addr_);
+		ROS_INFO("robotnik_modbus_io: %d", digital_outputs_addr_);
  
-		elevator_modbus_io_data_pub_ = modbus_node_handle.advertise<robotnik_msgs::inputs_outputs>("input_output", 100);
+		modbus_io_data_pub_ = modbus_node_handle.advertise<robotnik_msgs::inputs_outputs>("input_output", 100);
 
-		elevator_modbus_io_write_digital_srv_ = modbus_node_handle.advertiseService("write_digital_output", &modbusNode::write_digital_output, this);
-		elevator_modbus_io_write_digital_input_srv_ = modbus_node_handle.advertiseService("write_digital_input", &modbusNode::write_digital_input, this);
+		modbus_io_write_digital_srv_ = modbus_node_handle.advertiseService("write_digital_output", &modbusNode::write_digital_output, this);
+		modbus_io_write_digital_input_srv_ = modbus_node_handle.advertiseService("write_digital_input", &modbusNode::write_digital_input, this);
 
 		self_test_.add("Connect Test", this, &modbusNode::ConnectTest);
 
@@ -230,12 +230,12 @@ public:
 		if (endtime - starttime > max_delay)
 		{
 			//ROS_WARN("Gathering data took %f ms. Nominal is 10ms.", 1000 * (endtime - starttime));
-			was_slow_ = "Full elevator_modbus_imterface loop was slow.";
+			was_slow_ = "Full modbus_interface loop was slow.";
 			slow_count_++;
 		}
 		prevtime = starttime;
 		starttime = ros::Time::now().toSec();
-		elevator_modbus_io_data_pub_.publish(reading_);
+		modbus_io_data_pub_.publish(reading_);
 
 		endtime = ros::Time::now().toSec();
 		if (endtime - starttime > max_delay)
@@ -552,7 +552,7 @@ public:
 //SIGNINT HANDLER??
 int main(int argc, char** argv)
 {
-  ros::init(argc, argv, "modbus_io");
+  ros::init(argc, argv, "robotnik_modbus_io");
 
   ros::NodeHandle nh;
 
