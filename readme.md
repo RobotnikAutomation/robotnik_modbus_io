@@ -48,7 +48,7 @@ analog_outputs: []
 # enables the output 3
 $ rosservice call /robotnik_modbus_io/write_digital_output 3 true
 # disables the output 3
-$ rosservice call /robotnik_modbus_io/write_digital_output 3 true
+$ rosservice call /robotnik_modbus_io/write_digital_output 3 false
 # disables all the outputs
 $ rosservice call /robotnik_modbus_io/write_digital_output 0 false
 ```
