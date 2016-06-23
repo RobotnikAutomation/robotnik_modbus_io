@@ -39,6 +39,8 @@
 #include "modbus.h"
 #include <stdio.h>
 #include <typeinfo>
+#include <cerrno>
+#include <cstring>
 
 #include <signal.h>
 #include "ros/time.h"
@@ -123,7 +125,6 @@ public:
 	freq_diag_(diagnostic_updater::FrequencyStatusParam(&desired_freq_, &desired_freq_, 0.05))
 	{
 		running = false;
-		ros::NodeHandle modbus_node_handle(node_handle_, "robotnik_modbus_io");
 		// READ PARAMS
 		private_node_handle_.param("ip_address", ip_address_, string("127.0.0.1"));
 		private_node_handle_.param("port", port_, 502);
@@ -155,16 +156,16 @@ public:
 
 		ROS_INFO("robotnik_modbus_io: %d", digital_outputs_addr_);
  
-		modbus_io_data_pub_ = modbus_node_handle.advertise<robotnik_msgs::inputs_outputs>("input_output", 100);
+		modbus_io_data_pub_ = private_node_handle_.advertise<robotnik_msgs::inputs_outputs>("input_output", 100);
 
-		modbus_io_write_digital_srv_ = modbus_node_handle.advertiseService("write_digital_output", &modbusNode::write_digital_output, this);
-		modbus_io_write_digital_input_srv_ = modbus_node_handle.advertiseService("write_digital_input", &modbusNode::write_digital_input, this);
+		modbus_io_write_digital_srv_ = private_node_handle_.advertiseService("write_digital_output", &modbusNode::write_digital_output, this);
+		modbus_io_write_digital_input_srv_ = private_node_handle_.advertiseService("write_digital_input", &modbusNode::write_digital_input, this);
 
 		self_test_.add("Connect Test", this, &modbusNode::ConnectTest);
 
 		diagnostic_.add( freq_diag_ );
 
-		diagnostic_.add( "Device Status", this, &modbusNode::deviceStatus );
+		diagnostic_.add("Device Status", this, &modbusNode::deviceStatus);
 
 		// Initializes the outputs/inputs vector. Setup
 		reading_.digital_inputs.resize(digital_inputs_);
@@ -188,13 +189,17 @@ public:
 		stop();
 
 		mb_=modbus_new_tcp(ip_address_.c_str(),port_);
-		ROS_INFO("start: connecting to %s:%d", ip_address_.c_str(), port_);
+		if (mb_ == NULL)
+            dealWithModbusError();
+
+		ROS_INFO("modbus_io::start: connecting to %s:%d", ip_address_.c_str(), port_);
 		if (modbus_connect(mb_)== -1){
+            dealWithModbusError();
 			ROS_ERROR ("modbus_io::start - Connection Error!");
 			return -1;
 		}
 
-		ROS_INFO("Connected to MODBUS IO BOARD at %s on port %d", ip_address_.c_str(), port_ );
+		ROS_INFO("modbus_io::start: Connected to MODBUS IO BOARD at %s on port %d", ip_address_.c_str(), port_ );
 		freq_diag_.clear();
 
 		running = true;
@@ -206,12 +211,12 @@ public:
 	{
 		if(running)
 		{
+			ROS_INFO("modbus_io::stop: Closing modbus connection");
 			modbus_close(mb_);
 			modbus_free(mb_);
 			running = false;
-			ROS_INFO("Closing modbus connection");
 		}
-		ROS_INFO("STOP");
+		ROS_INFO("modbus_io::stop STOP");
 		return(0);
 	}
 
@@ -222,7 +227,7 @@ public:
 		double starttime = ros::Time::now().toSec();
 		if (prevtime && prevtime - starttime > 0.05)
 		{
-			//ROS_WARN("Full elevator_modbus_io loop took %f ms. Nominal is 10ms.", 1000 * (prevtime - starttime));
+			ROS_WARN("modbus_io::read_and_publish: Full loop took %f ms. Nominal is 10ms.", 1000 * (prevtime - starttime));
 			was_slow_ = "Full modbus_io loop was slow.";
 			slow_count_++;
 		}
@@ -232,7 +237,7 @@ public:
 		double endtime = ros::Time::now().toSec();
 		if (endtime - starttime > max_delay)
 		{
-			//ROS_WARN("Gathering data took %f ms. Nominal is 10ms.", 1000 * (endtime - starttime));
+			ROS_WARN("modbus_io::read_and_publish: Gathering data took %f ms. Nominal is 10ms.", 1000 * (endtime - starttime));
 			was_slow_ = "Full modbus_interface loop was slow.";
 			slow_count_++;
 		}
@@ -243,7 +248,7 @@ public:
 		endtime = ros::Time::now().toSec();
 		if (endtime - starttime > max_delay)
 		{
-			ROS_WARN("Publishing took %f ms. Nominal is 10 ms.", 1000 * (endtime - starttime));
+			ROS_WARN("modbus_io::read_and_publish: Publishing took %f ms. Nominal is 10 ms.", 1000 * (endtime - starttime));
 			was_slow_ = "Full modbus_io loop was slow.";
 			slow_count_++;
 		}
@@ -304,8 +309,11 @@ public:
 		// 0001 	 1 to 4 outuputs module IL ETH
 		
 		int16_t x;
+		int iret;
 		// Read digital 16 bit inputs registers. Each bit is an input
-		modbus_read_registers(mb_, digital_inputs_addr_, 1, tab_reg_);
+		iret = modbus_read_registers(mb_, digital_inputs_addr_, 1, tab_reg_);
+		if (iret != 1)
+		    dealWithModbusError();
 		//ROS_INFO("elevator_modbus_io::getData - Read %d ",tab_reg_[0]);
 		x = switchEndianness(tab_reg_[0]);
 		//din_ = tab_reg_[0];
@@ -324,7 +332,9 @@ public:
 		// Read digital outputs
 		// modbus_read_registers(mb_, 1, 1, tab_reg_);
 		//modbus_read_registers(mb_, digital_outputs_addr1_, 1, tab_reg_); //384
-		modbus_read_registers(mb_, digital_outputs_addr_, 1, tab_reg_);
+		iret = modbus_read_registers(mb_, digital_outputs_addr_, 1, tab_reg_);
+		if (iret != 1)
+		    dealWithModbusError();
 		x = switchEndianness(tab_reg_[0]);
 		dout_ = x;
 		//dout_ = tab_reg_[0];
@@ -369,7 +379,11 @@ public:
 		status.add("Excessive delay", slow_count_);
 	}
 	
-	
+    void dealWithModbusError()
+    {
+       ROS_WARN("modbus_io::error: %s (errorno: %d)", std::strerror(errno), errno);
+    }
+
 	//------------------------------------------------------------------
 	//SERVICE WRITE DIGITAL OUTPUT
 	//req.output (int8)
@@ -395,7 +409,9 @@ public:
 				ROS_INFO("modbus_io::write_digital_output: ALL OUTPUTS DISABLED (out = %d)", out);
 			}
 			register_value = switchEndianness(register_value);
-			iret=modbus_write_register(mb_, digital_outputs_addr_, register_value);
+			iret = modbus_write_register(mb_, digital_outputs_addr_, register_value);
+			if (iret != 1)
+			    dealWithModbusError();
 		}else{
 			req.output -= 1;
 			if(req.output > this->digital_outputs_-1){
@@ -409,10 +425,12 @@ public:
 				}else{
 					register_value = dout_ & ~shift_bit;
 				}
+				ROS_INFO("modbus_io::write_digital_output service request: OUTPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
 			    
 			    register_value = switchEndianness(register_value);
 				iret=modbus_write_register(mb_, digital_outputs_addr_, register_value);
-				ROS_INFO("modbus_io::write_digital_output service request: OUTPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
+                if (iret != 1)
+                    dealWithModbusError();
 			}
 		}
 		if (iret < 0) {
@@ -498,6 +516,9 @@ public:
 				ROS_INFO("modbus_io::write_digital_input: ALL INPUTS DISABLED (in = %d)", in);
 			}
 			iret=modbus_write_register(mb_, digital_inputs_addr_, register_value);
+            if (iret != 1)
+                dealWithModbusError();
+
 		}else{
 			req.output -= 1;
 			if(req.output > this->digital_inputs_-1){
@@ -511,8 +532,10 @@ public:
 				}else{
 					register_value = din_ & ~shift_bit;
 				}
-				iret=modbus_write_register(mb_, digital_inputs_addr_, register_value);
 				ROS_INFO("modbus_io::write_digital_input service request: INPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
+				iret=modbus_write_register(mb_, digital_inputs_addr_, register_value);
+                if (iret != 1)
+                    dealWithModbusError();
 			}
 		}
 		if (iret < 0) {
