@@ -63,6 +63,7 @@ int MODBUS_DEFAULT_DIGITAL_INPUTS  = 8;
 int MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS  = 4;
 int MODBUS_DEFAULT_MIN_DIGITAL_INPUTS	= 8;	// Min. number of digital inputs (factory default)
 
+bool MODBUS_DEFAULT_BIG_ENDIAN = false; //defines endianness of the modbus device. false = little endian (PC), true = big endian 
 
 using namespace std;
 
@@ -93,6 +94,7 @@ public:
 	int digital_outputs_;
 	int digital_inputs_addr_;
 	int digital_outputs_addr_;
+	bool big_endian_;
 	//int digital_outputs_addr1_;
     //int digital_outputs_addr2_;
 
@@ -132,6 +134,7 @@ public:
 		//private_node_handle_.param("digital_outputs_addr2", digital_outputs_addr2_, 385); //not used
 		private_node_handle_.param("digital_outputs_addr", digital_outputs_addr_, 100); //new used
 
+        private_node_handle_.param<bool>("big_endian", big_endian_, MODBUS_DEFAULT_BIG_ENDIAN);
 		// Checks the min num of digital outputs
 		/*if(digital_outputs_ < MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS){
 			digital_outputs_ = MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS;
@@ -286,6 +289,14 @@ public:
 		status.summary(0, "Connected successfully.");
 	}
 
+    int16_t switchEndianness(int16_t reg)
+    {
+        if (big_endian_) 
+            return htobe16(reg); //host endianness to big endian
+        else 
+            return htole16(reg); //host endianness to little endian
+    }
+
 	void getData(robotnik_msgs::inputs_outputs& data)
 	{
 		// Adress	 Description
@@ -296,10 +307,10 @@ public:
 		// Read digital 16 bit inputs registers. Each bit is an input
 		modbus_read_registers(mb_, digital_inputs_addr_, 1, tab_reg_);
 		//ROS_INFO("elevator_modbus_io::getData - Read %d ",tab_reg_[0]);
-		x = tab_reg_[0];
+		x = switchEndianness(tab_reg_[0]);
 		//din_ = tab_reg_[0];
 		din_ = x;
-		for (int i=0; i<8; i++) {
+		for (int i=0; i<digital_inputs_; i++) {
 			data.digital_inputs[i] = x&1;
 			x>>=1;
 		}
@@ -314,11 +325,11 @@ public:
 		// modbus_read_registers(mb_, 1, 1, tab_reg_);
 		//modbus_read_registers(mb_, digital_outputs_addr1_, 1, tab_reg_); //384
 		modbus_read_registers(mb_, digital_outputs_addr_, 1, tab_reg_);
-		x = tab_reg_[0];
+		x = switchEndianness(tab_reg_[0]);
 		dout_ = x;
 		//dout_ = tab_reg_[0];
 		//dout384_ = dout_;
-		for (int i=0; i<8; i++) {
+		for (int i=0; i<digital_outputs_; i++) {
 			data.digital_outputs[i] = x&1;
 			x>>=1;
 		}
@@ -377,12 +388,13 @@ public:
 		
 		if(out <= 0){
 			if (req.value){
-				register_value = 0xFF;
+				register_value = 0xFFFF;
 				ROS_INFO("modbus_io::write_digital_output: ALL OUTPUTS ENABLED (out = %d)", out);
 			}else{
-				register_value = 0x00;
+				register_value = 0x0000;
 				ROS_INFO("modbus_io::write_digital_output: ALL OUTPUTS DISABLED (out = %d)", out);
 			}
+			register_value = switchEndianness(register_value);
 			iret=modbus_write_register(mb_, digital_outputs_addr_, register_value);
 		}else{
 			req.output -= 1;
@@ -397,6 +409,8 @@ public:
 				}else{
 					register_value = dout_ & ~shift_bit;
 				}
+			    
+			    register_value = switchEndianness(register_value);
 				iret=modbus_write_register(mb_, digital_outputs_addr_, register_value);
 				ROS_INFO("modbus_io::write_digital_output service request: OUTPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
 			}
