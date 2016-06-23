@@ -22,7 +22,7 @@ This component is intended to set and read digital I/O from a modbus server.
 
 To test the component:
 
-* Check that IP of the modbus I/O is correct (by default 192.168.1.185)
+* Check that IP of the modbus I/O is correct (by default 192.168.1.195)
 
 * Run the node
 
