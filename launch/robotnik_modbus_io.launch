@@ -8,6 +8,7 @@
 	<param name="digital_outputs_addr" value="384"/>
 	<param name="digital_outputs" value="8"/>
 	<param name="digital_inputs" value="8"/>
+	<param name="big_endian" value="false"/>
   </node>
 
 </launch>
