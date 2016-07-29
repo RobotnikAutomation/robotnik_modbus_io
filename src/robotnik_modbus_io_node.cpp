@@ -57,14 +57,17 @@
 
 #include <modbus.h>
 
-#define MODBUS_DESIRED_FREQ	10.0
+#define MODBUS_DESIRED_FREQ						10.0
 
-int MODBUS_DEFAULT_DIGITAL_OUTPUTS = 8;
-int MODBUS_DEFAULT_DIGITAL_INPUTS  = 8;
+#define MODBUS_DEFAULT_DIGITAL_OUTPUTS			8
+#define MODBUS_DEFAULT_DIGITAL_INPUTS			8
+#define MODBUS_DEFAULT_ANALOG_OUTPUTS			2
+#define MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS		4	// Min. number of digital outputs (factory default)
+#define MODBUS_DEFAULT_MIN_DIGITAL_INPUTS		8	// Min. number of digital inputs (factory default)
+#define MODBUS_DEFAULT_MIN_ANALOG_INPUTS		0	// Min. number of analog inputs (factory default)
 
-//int MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS = 8;	// Min. number of digital outputs (factory default)
-int MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS  = 4;
-int MODBUS_DEFAULT_MIN_DIGITAL_INPUTS	= 8;	// Min. number of digital inputs (factory default)
+#define MODBUS_DEFAULT_ANALOG_INPUT_DIVISOR		30000.0
+#define MODBUS_DEFAULT_ANALOG_INPUT_MULTIPLIER	10.0
 
 bool MODBUS_DEFAULT_BIG_ENDIAN = false; //defines endianness of the modbus device. false = little endian (PC), true = big endian 
 
@@ -95,6 +98,7 @@ public:
 	// Config params
 	int digital_inputs_;
 	int digital_outputs_;
+	int analog_inputs_;
 	int digital_inputs_addr_;
 	int digital_outputs_addr_;
 	bool big_endian_;
@@ -115,7 +119,14 @@ public:
 	uint16_t dout_;  // used to read digital outputs
     uint16_t dout384_; // store digital output registers to activate each one separatedly (not use)
     uint16_t dout385_; // store digital output registers to activate each one separatedly (not use)
-
+	
+	//! saves the analog inputs address
+	vector<int> analog_inputs_addr_;
+	//! variable divisor to apply to the analog input register
+	double analog_register_divisor_;
+	//! variable multiplier to apply to the analog input register
+	double analog_register_multiplier_;
+	
 	float max_delay_;
 	
 	//Constructor
@@ -129,6 +140,11 @@ public:
 		private_node_handle_.param("port", port_, 502);
 		private_node_handle_.param("digital_outputs", digital_outputs_, MODBUS_DEFAULT_DIGITAL_OUTPUTS);
 		private_node_handle_.param("digital_inputs", digital_inputs_, 	MODBUS_DEFAULT_DIGITAL_INPUTS);
+		private_node_handle_.param("analog_inputs", analog_inputs_, MODBUS_DEFAULT_MIN_ANALOG_INPUTS);
+		private_node_handle_.param("analog_register_divisor", analog_register_divisor_, MODBUS_DEFAULT_ANALOG_INPUT_DIVISOR);
+		private_node_handle_.param("analog_register_multiplier", analog_register_multiplier_, MODBUS_DEFAULT_ANALOG_INPUT_MULTIPLIER);
+		private_node_handle_.param("desired_freq", desired_freq_, 10.0);
+
 		private_node_handle_.param("digital_inputs_addr", digital_inputs_addr_, 0);
 		private_node_handle_.param("digital_outputs_addr", digital_outputs_addr_, 100); //new used
 
@@ -144,11 +160,28 @@ public:
 			ROS_INFO("modbus_io: Setting num of digital inputs to the minimum value = %d", MODBUS_DEFAULT_MIN_DIGITAL_INPUTS);
 		}
 		*/
+		XmlRpc::XmlRpcValue list;
+		private_node_handle_.getParam("analog_inputs_addr", list);
 		
-		ROS_INFO("modbus_io: Settings -> DO = %d (register %d), DI = %d (register %d)",
-		digital_outputs_, digital_outputs_addr_, digital_inputs_, digital_inputs_addr_);
-
-		ROS_INFO("modbus_io: %d", digital_outputs_addr_);
+		// Checks that the read param type is correct
+		if(list.getType() != XmlRpc::XmlRpcValue::TypeArray){
+			ROS_ERROR("modbus_io: Wrong read type (%d) for analog_inputs_addr param", list.getType());
+			
+		}else{
+			// Saves the array into class vector
+			for(int32_t i = 0; i < list.size(); ++i) {
+				analog_inputs_addr_.push_back(static_cast<int>(list[i]));
+			}
+		}
+		
+		if((int)analog_inputs_addr_.size() < analog_inputs_){
+			ROS_WARN("modbus_io: the number of analog inputs (%d) is different to the number of analog inputs addresses (%d). Revise the config files.", analog_inputs_, (int)analog_inputs_addr_.size() );
+			// resize the number of analog inputs
+			analog_inputs_ = (int)analog_inputs_addr_.size();
+		}
+		
+		ROS_INFO("modbus_io: Settings -> DO = %d (register %d), DI = %d (register %d), AI = %d",
+		digital_outputs_, digital_outputs_addr_, digital_inputs_, digital_inputs_addr_, analog_inputs_);
  
 		modbus_io_data_pub_ = private_node_handle_.advertise<robotnik_msgs::inputs_outputs>("input_output", 100);
 
@@ -164,6 +197,7 @@ public:
 		// Initializes the outputs/inputs vector. Setup
 		reading_.digital_inputs.resize(digital_inputs_);
 		reading_.digital_outputs.resize(digital_outputs_);
+		reading_.analog_inputs.resize(analog_inputs_);
 		max_delay_ = 1.0 / MODBUS_DESIRED_FREQ;
 
 		din_= 0;
@@ -251,7 +285,7 @@ public:
 
 	bool spin()
 	{
-		ros::Rate r(MODBUS_DESIRED_FREQ);
+		ros::Rate r(desired_freq_);
 		while (!ros::isShuttingDown()) // Using ros::isShuttingDown to avoid restarting the node during a shutdown.
 		{
 
@@ -323,6 +357,15 @@ public:
 		for (int i=0; i<digital_outputs_; i++) {
 			data.digital_outputs[i] = x&1;
 			x>>=1;
+		}
+		
+		// ANALOG INPUTS
+		for (int i=0; i<analog_inputs_; i++){
+			//
+			// READS every register independently
+			modbus_read_registers(mb_, analog_inputs_addr_[i], 1, tab_reg_);
+			data.analog_inputs[i] = double (tab_reg_[0] / analog_register_divisor_) * analog_register_multiplier_;
+			//ROS_INFO("reading analog %d, address %d [register = %x", i+1, analog_inputs_addr_[i], tab_reg_[0]);
 		}
 
 	}
