@@ -54,6 +54,7 @@
 #include <std_msgs/Bool.h>
 #include <robotnik_msgs/inputs_outputs.h>
 #include <robotnik_msgs/set_digital_output.h>
+#include <robotnik_msgs/State.h>
 
 #include <modbus.h>
 
@@ -68,6 +69,8 @@
 
 #define MODBUS_DEFAULT_ANALOG_INPUT_DIVISOR		30000.0
 #define MODBUS_DEFAULT_ANALOG_INPUT_MULTIPLIER	10.0
+#define MODBUS_MAX_COMM_ERRORS					10	// Max number of erros in communication to consider an error
+#define MODBUS_ERROR_RECOVERY_TIME				5 	// Tries the recovery every X seconds
 
 bool MODBUS_DEFAULT_BIG_ENDIAN = false; //defines endianness of the modbus device. false = little endian (PC), true = big endian 
 
@@ -83,6 +86,8 @@ public:
 	//tcp/ip data
 	string ip_address_;
 	int port_;
+	// components state
+	int state, previous_state;
 
 	//ROS objects
 	self_test::TestRunner self_test_;
@@ -91,6 +96,7 @@ public:
 	ros::NodeHandle node_handle_;
 	ros::NodeHandle private_node_handle_;
 	ros::Publisher modbus_io_data_pub_;
+	ros::Publisher state_pub_;
 	ros::ServiceServer modbus_io_write_digital_srv_;
 	ros::ServiceServer modbus_io_write_digital_input_srv_;
 
@@ -128,6 +134,10 @@ public:
 	double analog_register_multiplier_;
 	
 	float max_delay_;
+	//! num of erros in the modbus communication
+	int modbus_errors_;
+	//! Saves the time of the error 
+	ros::Time communication_error_time;
 	
 	//Constructor
 	modbusNode(ros::NodeHandle h): 
@@ -184,9 +194,10 @@ public:
 		digital_outputs_, digital_outputs_addr_, digital_inputs_, digital_inputs_addr_, analog_inputs_);
  
 		modbus_io_data_pub_ = private_node_handle_.advertise<robotnik_msgs::inputs_outputs>("input_output", 100);
-
-		modbus_io_write_digital_srv_ = private_node_handle_.advertiseService("write_digital_output", &modbusNode::write_digital_output, this);
-		modbus_io_write_digital_input_srv_ = private_node_handle_.advertiseService("write_digital_input", &modbusNode::write_digital_input, this);
+		state_pub_ = private_node_handle_.advertise<robotnik_msgs::State>("state", 1);
+		
+		modbus_io_write_digital_srv_ = private_node_handle_.advertiseService("write_digital_output", &modbusNode::write_digital_output_srv, this);
+		modbus_io_write_digital_input_srv_ = private_node_handle_.advertiseService("write_digital_input", &modbusNode::write_digital_input_srv, this);
 
 		self_test_.add("Connect Test", this, &modbusNode::ConnectTest);
 
@@ -202,6 +213,8 @@ public:
 
 		din_= 0;
 		dout_= 0;
+		previous_state = state = robotnik_msgs::State::INIT_STATE;
+		modbus_errors_ = 0;
     }
 
 	//Destructor
@@ -213,39 +226,59 @@ public:
 	int start()
 	{
 		stop();
-
-		mb_=modbus_new_tcp(ip_address_.c_str(),port_);
-		if (mb_ == NULL)
-            dealWithModbusError();
-
-		ROS_INFO("modbus_io::start: connecting to %s:%d", ip_address_.c_str(), port_);
-		if (modbus_connect(mb_)== -1){
-            dealWithModbusError();
-			ROS_ERROR ("modbus_io::start - connection Error!");
+		
+		if(connectModbus() != 0)
 			return -1;
-		}
 
 		ROS_INFO("modbus_io::start: connected to MODBUS IO BOARD at %s on port %d", ip_address_.c_str(), port_ );
 		freq_diag_.clear();
 
 		running_ = true;
-
+		
+		switchToState(robotnik_msgs::State::READY_STATE);
+		
 		return(0);
 	}
 
+	
 	int stop()
 	{
 		if(running_)
 		{
 			ROS_INFO("modbus_io::stop: Closing modbus connection");
-			modbus_close(mb_);
-			modbus_free(mb_);
+			disconnectModbus();
 			running_ = false;
 		}
 		ROS_INFO("modbus_io::stop STOP");
 		return(0);
 	}
-
+	
+	
+	int connectModbus(){
+		
+		ROS_INFO("modbus_io::connectModbus: connecting to %s:%d", ip_address_.c_str(), port_);
+		mb_=modbus_new_tcp(ip_address_.c_str(),port_);
+		if (mb_ == NULL){
+            dealWithModbusError();
+            return -1;
+		}
+		if (modbus_connect(mb_)== -1){
+            dealWithModbusError();
+			ROS_ERROR ("modbus_io::connectModbus - connection Error!");
+			return -1;
+		}
+		
+		return 0;
+	}
+	
+	
+	int disconnectModbus(){
+		modbus_close(mb_);
+		modbus_free(mb_);
+		return 0;
+	}
+	
+	
 	int read_and_publish()
 	{
 		static double prevtime = 0;
@@ -280,11 +313,16 @@ public:
 		}
 
 		freq_diag_.tick();
-		return(0);
+		
+		
+		return 0;
 	}
+
 
 	bool spin()
 	{
+		ros::Time t_now;
+		
 		ros::Rate r(desired_freq_);
 		while (!ros::isShuttingDown()) // Using ros::isShuttingDown to avoid restarting the node during a shutdown.
 		{
@@ -292,10 +330,45 @@ public:
 			if (start() == 0)
 			{
 				while(node_handle_.ok()) {
-					if(read_and_publish() < 0)
+					
+					switch(state){
+						
+						case robotnik_msgs::State::READY_STATE:
+							read_and_publish();
+							
+							if(modbus_errors_ > MODBUS_MAX_COMM_ERRORS)
+								switchToState(robotnik_msgs::State::FAILURE_STATE);
+		
+								
 						break;
+						
+						case robotnik_msgs::State::FAILURE_STATE:
+							t_now = ros::Time::now();
+						
+							if((t_now - communication_error_time).toSec() > MODBUS_ERROR_RECOVERY_TIME){
+								ROS_INFO("modbus_io::spin: trying to recover");
+								disconnectModbus();
+								sleep(1);
+								if(connectModbus() == 0){
+									ROS_INFO("modbus_io::spin: reconnected to modbus!");
+									switchToState(robotnik_msgs::State::READY_STATE);
+								}
+								communication_error_time = t_now;
+							}
+							
+						break;
+					}
+					
 					self_test_.checkTest();
 					diagnostic_.update();
+					
+					// publish component state
+					robotnik_msgs::State msg;
+					msg.state = state;
+					msg.desired_freq = desired_freq_;
+					msg.state_description = getStateString(state);
+					state_pub_.publish(msg);
+					
 					ros::spinOnce();
 					r.sleep();
 				}
@@ -313,12 +386,14 @@ public:
 		return true;
 	}
 
+
 	void ConnectTest(diagnostic_updater::DiagnosticStatusWrapper& status)
 	{
 		// connection test
 		// TBC
 		status.summary(0, "Connected successfully.");
 	}
+
 
     int16_t switchEndianness(int16_t reg)
     {
@@ -327,6 +402,7 @@ public:
         else 
             return htole16(reg); //host endianness to little endian
     }
+
 
 	void getData(robotnik_msgs::inputs_outputs& data)
 	{
@@ -370,6 +446,7 @@ public:
 
 	}
 
+
 	void deviceStatus(diagnostic_updater::DiagnosticStatusWrapper &status)
 	{
 		if (!running_)
@@ -385,10 +462,12 @@ public:
 		status.add("Error count", error_count_);
 		status.add("Excessive delay", slow_count_);
 	}
+
 	
     void dealWithModbusError()
     {
        ROS_WARN("modbus_io::error: %s (errorno: %u)", modbus_strerror(errno), errno);
+       modbus_errors_++;
     }
 
 	//------------------------------------------------------------------
@@ -399,7 +478,7 @@ public:
 	//req.ret (bool)
 	//------------------------------------------------------------------
 
-	bool write_digital_output(
+	bool write_digital_output_srv(
 		robotnik_msgs::set_digital_output::Request &req, 
 		robotnik_msgs::set_digital_output::Response &res){
 			
@@ -413,10 +492,10 @@ public:
     				register_value = 0x00FF;
                 else if (digital_outputs_ == 16)
                     register_value = 0xFFFF;
-				ROS_INFO("modbus_io::write_digital_output: ALL OUTPUTS ENABLED (out = %d)", out);
+				ROS_INFO("modbus_io::write_digital_output_srv: ALL OUTPUTS ENABLED (out = %d)", out);
 			}else{
 				register_value = 0x0000;
-				ROS_INFO("modbus_io::write_digital_output: ALL OUTPUTS DISABLED (out = %d)", out);
+				ROS_INFO("modbus_io::write_digital_output_srv: ALL OUTPUTS DISABLED (out = %d)", out);
 			}
 			register_value = switchEndianness(register_value);
 			iret = modbus_write_register(mb_, digital_outputs_addr_, register_value);
@@ -426,7 +505,7 @@ public:
 			req.output -= 1;
 			if(req.output > this->digital_outputs_-1){
 				res.ret = false;
-				ROS_ERROR("modbus_io::write_digital_output: OUTPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output+1, this->digital_outputs_);
+				ROS_ERROR("modbus_io::write_digital_output_srv: OUTPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output+1, this->digital_outputs_);
 				return false;
 			}else{
 				shift_bit = (uint16_t) 1<<req.output; //shifts req.output number to the left
@@ -435,7 +514,7 @@ public:
 				}else{
 					register_value = dout_ & ~shift_bit;
 				}
-				ROS_INFO("modbus_io::write_digital_output service request: OUTPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
+				ROS_INFO("modbus_io::write_digital_output_srv service request: OUTPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
 			    
 			    register_value = switchEndianness(register_value);
 				iret=modbus_write_register(mb_, digital_outputs_addr_, register_value);
@@ -460,7 +539,7 @@ public:
 	//req.ret (bool)
 	//------------------------------------------------------------------
 	
-	bool write_digital_input(
+	bool write_digital_input_srv(
 		robotnik_msgs::set_digital_output::Request &req,
 		robotnik_msgs::set_digital_output::Response &res
 	){
@@ -472,10 +551,10 @@ public:
 		if(in <= 0){
 			if (req.value){
 				register_value = 0xFF;
-				ROS_INFO("modbus_io::write_digital_input: ALL INPUTS ENABLED (in = %d)", in);
+				ROS_INFO("modbus_io::write_digital_input_srv: ALL INPUTS ENABLED (in = %d)", in);
 			}else{
 				register_value = 0x00;
-				ROS_INFO("modbus_io::write_digital_input: ALL INPUTS DISABLED (in = %d)", in);
+				ROS_INFO("modbus_io::write_digital_input_srv: ALL INPUTS DISABLED (in = %d)", in);
 			}
 			iret=modbus_write_register(mb_, digital_inputs_addr_, register_value);
             if (iret != 1)
@@ -485,7 +564,7 @@ public:
 			req.output -= 1;
 			if(req.output > this->digital_inputs_-1){
 				res.ret = false;
-				ROS_ERROR("modbus_io::write_digital_input: INPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output+1, this->digital_inputs_);
+				ROS_ERROR("modbus_io::write_digital_input_srv: INPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output+1, this->digital_inputs_);
 				return false;
 			}else{
 				shift_bit = (uint16_t) 1<<req.output; //shifts req.output number to the left
@@ -494,7 +573,7 @@ public:
 				}else{
 					register_value = din_ & ~shift_bit;
 				}
-				ROS_INFO("modbus_io::write_digital_input service request: INPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
+				ROS_INFO("modbus_io::write_digital_input_srv service request: INPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
 				iret=modbus_write_register(mb_, digital_inputs_addr_, register_value);
                 if (iret != 1)
                     dealWithModbusError();
@@ -507,6 +586,61 @@ public:
 		}
 		return res.ret;
 	}
+	
+	void switchToState(int new_state){
+		if(new_state == state)
+			return;
+
+		// saves the previous state
+		previous_state = state;
+		ROS_INFO("modbus_io::SwitchToState: %s -> %s", getStateString(state), getStateString(new_state));	
+		state = new_state;
+		
+		switch(state){
+			case robotnik_msgs::State::READY_STATE:
+				// reseting the errors
+				modbus_errors_ = 0;
+				
+			break;
+			case robotnik_msgs::State::FAILURE_STATE:
+				// Inits timer for recovery
+				communication_error_time = ros::Time::now();
+				
+			break;
+			
+		}
+	}
+	
+	
+	/*!	\fn char *getStateString(int state)
+	 *	\brief Gets the state as a string
+	*/
+	char *getStateString(int state){
+		switch(state){
+			case robotnik_msgs::State::INIT_STATE:
+				return (char *)"INIT";
+			break;
+			case robotnik_msgs::State::STANDBY_STATE:
+				return (char *)"STANDBY";
+			break;
+			case robotnik_msgs::State::READY_STATE:
+				return (char *)"READY";
+			break;
+			case robotnik_msgs::State::EMERGENCY_STATE:
+				return (char *)"EMERGENCY";
+			break;
+			case robotnik_msgs::State::FAILURE_STATE:
+				return (char *)"FAILURE";
+			break;
+			case robotnik_msgs::State::SHUTDOWN_STATE:
+				return (char *)"SHUTDOWN";
+			break;
+			default:
+				return (char *)"UNKNOWN";
+			break;
+		}
+	}
+
 };
 
 //TODO: SIGNINT HANDLER??
