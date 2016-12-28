@@ -58,6 +58,8 @@
 
 #include <modbus.h>
 
+#include <pthread.h>
+
 #define MODBUS_DESIRED_FREQ						10.0
 
 #define MODBUS_DEFAULT_DIGITAL_OUTPUTS			8
@@ -139,6 +141,8 @@ public:
     //! Saves the time of the error
     ros::Time communication_error_time;
 
+
+    pthread_mutex_t lock_;
     //Constructor
     modbusNode(ros::NodeHandle h):
         self_test_(), diagnostic_(), node_handle_(h), private_node_handle_("~"), error_count_(0), slow_count_(0), desired_freq_(20),
@@ -215,6 +219,8 @@ public:
         dout_= 0;
         previous_state = state = robotnik_msgs::State::INIT_STATE;
         modbus_errors_ = 0;
+
+
     }
 
     //Destructor
@@ -226,6 +232,12 @@ public:
     int start()
     {
         stop();
+        
+	if (pthread_mutex_init(&lock_, NULL) != 0)
+	{
+        	ROS_ERROR("modbus_io::start: could not initiate mutex");
+		return -1;
+	}
 
         if(connectModbus() != 0)
             return -1;
@@ -234,6 +246,8 @@ public:
         freq_diag_.clear();
 
         running_ = true;
+	
+
 
         switchToState(robotnik_msgs::State::READY_STATE);
 
@@ -248,6 +262,7 @@ public:
             ROS_INFO("modbus_io::stop: Closing modbus connection");
             disconnectModbus();
             running_ = false;
+	    pthread_mutex_destroy(&lock_);
         }
         ROS_INFO("modbus_io::stop STOP");
         return(0);
@@ -492,6 +507,8 @@ public:
         robotnik_msgs::set_digital_output::Request &req,
         robotnik_msgs::set_digital_output::Response &res) {
 
+        pthread_mutex_lock(&lock_);
+
         int iret;
         uint16_t register_value, shift_bit;	//register value, bit
         int out = req.output;
@@ -502,10 +519,10 @@ public:
                     register_value = 0x00FF;
                 else if (digital_outputs_ == 16)
                     register_value = 0xFFFF;
-                ROS_INFO("modbus_io::write_digital_output_srv: ALL OUTPUTS ENABLED (out = %d)", out);
+                ROS_DEBUG("modbus_io::write_digital_output_srv: ALL OUTPUTS ENABLED (out = %d)", out);
             } else {
                 register_value = 0x0000;
-                ROS_INFO("modbus_io::write_digital_output_srv: ALL OUTPUTS DISABLED (out = %d)", out);
+                ROS_DEBUG("modbus_io::write_digital_output_srv: ALL OUTPUTS DISABLED (out = %d)", out);
             }
             register_value = switchEndianness(register_value);
             iret = modbus_write_register(mb_, digital_outputs_addr_, register_value);
@@ -516,6 +533,7 @@ public:
             if(req.output > this->digital_outputs_-1) {
                 res.ret = false;
                 ROS_ERROR("modbus_io::write_digital_output_srv: OUTPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output+1, this->digital_outputs_);
+		pthread_mutex_unlock(&lock_);
                 return false;
             } else {
                 shift_bit = (uint16_t) 1<<req.output; //shifts req.output number to the left
@@ -524,7 +542,7 @@ public:
                 } else {
                     register_value = dout_ & ~shift_bit;
                 }
-                ROS_INFO("modbus_io::write_digital_output_srv service request: OUTPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
+                ROS_DEBUG("modbus_io::write_digital_output_srv service request: OUTPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
 
                 register_value = switchEndianness(register_value);
                 iret=modbus_write_register(mb_, digital_outputs_addr_, register_value);
@@ -537,6 +555,7 @@ public:
         } else {
             res.ret = true;
         }
+	pthread_mutex_unlock(&lock_);
         return res.ret;
     }
 
@@ -561,10 +580,10 @@ public:
         if(in <= 0) {
             if (req.value) {
                 register_value = 0xFF;
-                ROS_INFO("modbus_io::write_digital_input_srv: ALL INPUTS ENABLED (in = %d)", in);
+                ROS_DEBUG("modbus_io::write_digital_input_srv: ALL INPUTS ENABLED (in = %d)", in);
             } else {
                 register_value = 0x00;
-                ROS_INFO("modbus_io::write_digital_input_srv: ALL INPUTS DISABLED (in = %d)", in);
+                ROS_DEBUG("modbus_io::write_digital_input_srv: ALL INPUTS DISABLED (in = %d)", in);
             }
             iret=modbus_write_register(mb_, digital_inputs_addr_, register_value);
             if (iret != 1)
@@ -583,7 +602,7 @@ public:
                 } else {
                     register_value = din_ & ~shift_bit;
                 }
-                ROS_INFO("modbus_io::write_digital_input_srv service request: INPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
+                ROS_DEBUG("modbus_io::write_digital_input_srv service request: INPUT=%d, VALUE=%d", (int)req.output+1, (int)req.value);
                 iret=modbus_write_register(mb_, digital_inputs_addr_, register_value);
                 if (iret != 1)
                     dealWithModbusError();
