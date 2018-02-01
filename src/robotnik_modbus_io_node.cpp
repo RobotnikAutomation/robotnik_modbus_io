@@ -64,8 +64,8 @@
 
 #define MODBUS_DESIRED_FREQ 10.0
 
-#define MODBUS_DEFAULT_DIGITAL_OUTPUTS 8
-#define MODBUS_DEFAULT_DIGITAL_INPUTS 8
+#define MODBUS_DEFAULT_DIGITAL_OUTPUTS 80
+#define MODBUS_DEFAULT_DIGITAL_INPUTS 80
 #define MODBUS_DEFAULT_ANALOG_OUTPUTS 2
 #define MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS 4  // Min. number of digital outputs (factory default)
 #define MODBUS_DEFAULT_MIN_DIGITAL_INPUTS 8   // Min. number of digital inputs (factory default)
@@ -128,11 +128,12 @@ public:
   // Modbus member variables
   modbus_t* mb_;
   uint16_t tab_reg_[32];
-  uint16_t din_;      // used to read and save digital inputs
-  uint16_t dout_;     // used to read digital outputs
+  uint16_t* din_;     // used to read and save digital inputs.
+  uint16_t* dout_;    // used to read digital outputs.
   uint16_t dout384_;  // store digital output registers to activate each one separatedly (not use)
   uint16_t dout385_;  // store digital output registers to activate each one separatedly (not use)
 
+  int registers_for_io_;
   //! saves the analog inputs address
   vector<int> analog_inputs_addr_;
   //! variable divisor to apply to the analog input register
@@ -160,7 +161,7 @@ public:
   {
     running_ = false;
     // READ PARAMS
-    private_node_handle_.param("ip_address", ip_address_, string("127.0.0.1"));
+    private_node_handle_.param("ip_address", ip_address_, string("192.168.0.20"));
     private_node_handle_.param("port", port_, 502);
     private_node_handle_.param("digital_outputs", digital_outputs_, MODBUS_DEFAULT_DIGITAL_OUTPUTS);
     private_node_handle_.param("digital_inputs", digital_inputs_, MODBUS_DEFAULT_DIGITAL_INPUTS);
@@ -172,7 +173,7 @@ public:
     private_node_handle_.param("desired_freq", desired_freq_, 10.0);
 
     private_node_handle_.param("digital_inputs_addr", digital_inputs_addr_, 0);
-    private_node_handle_.param("digital_outputs_addr", digital_outputs_addr_, 100);  // new used
+    private_node_handle_.param("digital_outputs_addr", digital_outputs_addr_, 10);  // new used
 
     private_node_handle_.param<bool>("big_endian", big_endian_, MODBUS_DEFAULT_BIG_ENDIAN);
     // Checks the min num of digital outputs
@@ -241,8 +242,10 @@ public:
     reading_.analog_inputs.resize(analog_inputs_);
     max_delay_ = 1.0 / MODBUS_DESIRED_FREQ;
 
-    din_ = 0;
-    dout_ = 0;
+    registers_for_io_ = 10;
+    din_ = new uint16_t[registers_for_io_];
+    dout_ = new uint16_t[registers_for_io_];
+
     previous_state = state = robotnik_msgs::State::INIT_STATE;
     modbus_errors_ = 0;
   }
@@ -461,38 +464,47 @@ public:
     int iret;
 
     // Read digital 16 bit inputs registers. Each bit is an input
-    iret = modbus_read_registers(mb_, digital_inputs_addr_, 1, tab_reg_);
-    if (iret != 1)
+    iret = modbus_read_registers(mb_, digital_inputs_addr_, registers_for_io_, tab_reg_);
+    if (iret != registers_for_io_)
       dealWithModbusError();
-    x = switchEndianness(tab_reg_[0]);
-    din_ = x;
-    for (int i = 0; i < digital_inputs_; i++)
+    for (int j = 0; j < registers_for_io_; j++)
     {
-      data.digital_inputs[i] = x & 1;
-      x >>= 1;
+      x = switchEndianness(tab_reg_[j]);
+      din_[j] = x;
+      // XXX: for vulcano2 modbus module, we only use the LOW/HIGH byte of the register
+      for (int i = 0; i < 8; i++)
+      {
+        data.digital_inputs[i + 8 * j] = x & 1;
+        x >>= 1;
+      }
     }
 
-    iret = modbus_read_registers(mb_, digital_outputs_addr_, 1, tab_reg_);
-    if (iret != 1)
+    iret = modbus_read_registers(mb_, digital_outputs_addr_, registers_for_io_, tab_reg_);
+    if (iret != registers_for_io_)
       dealWithModbusError();
-    x = switchEndianness(tab_reg_[0]);
-    dout_ = x;
-
-    for (int i = 0; i < digital_outputs_; i++)
+    for (int j = 0; j < registers_for_io_; j++)
     {
-      data.digital_outputs[i] = x & 1;
-      x >>= 1;
-    }
+      x = switchEndianness(tab_reg_[j]);
+      dout_[j] = x;
+      ROS_INFO("%d %d %d", j, x, tab_reg_[j]);
 
-    // ANALOG INPUTS
-    for (int i = 0; i < analog_inputs_; i++)
-    {
-      //
-      // READS every register independently
-      modbus_read_registers(mb_, analog_inputs_addr_[i], 1, tab_reg_);
-      data.analog_inputs[i] = double(tab_reg_[0] / analog_register_divisor_) * analog_register_multiplier_;
-      // ROS_INFO("reading analog %d, address %d [register = %x", i+1, analog_inputs_addr_[i], tab_reg_[0]);
+      // XXX: for vulcano2 modbus module, we only use the LOW/HIGH byte of the register
+      for (int i = 0; i < 8; i++)
+      {
+        data.digital_outputs[i + 8 * j] = x & 1;
+        x >>= 1;
+      }
     }
+    ////
+    ////    // ANALOG INPUTS
+    ////    for (int i = 0; i < analog_inputs_; i++)
+    ////    {
+    ////      //
+    ////      // READS every register independently
+    ////      modbus_read_registers(mb_, analog_inputs_addr_[i], 1, tab_reg_);
+    ////      data.analog_inputs[i] = double(tab_reg_[0] / analog_register_divisor_) * analog_register_multiplier_;
+    ////      // ROS_INFO("reading analog %d, address %d [register = %x", i+1, analog_inputs_addr_[i], tab_reg_[0]);
+    ////    }
   }
 
   void deviceStatus(diagnostic_updater::DiagnosticStatusWrapper& status)
@@ -513,7 +525,7 @@ public:
 
   void dealWithModbusError()
   {
-    ROS_WARN("modbus_io::error: %s (errorno: %u)", modbus_strerror(errno), errno);
+    ROS_WARN("modbus_io::error: %s (errorno: %d)", modbus_strerror(errno), errno);
     modbus_errors_++;
   }
 
@@ -567,20 +579,23 @@ public:
       }
       else
       {
-        shift_bit = (uint16_t)1 << req.output;  // shifts req.output number to the left
+        // XXX we operate in the LOW/HIGH byte of the register, a
+        int base_address = req.output / 8;
+        int output_number_in_register = req.output % 8;
+        shift_bit = (uint16_t)1 << output_number_in_register;  // shifts req.output number to the left
         if (req.value)
         {
-          register_value = dout_ | shift_bit;
+          register_value = dout_[base_address] | shift_bit;
         }
         else
         {
-          register_value = dout_ & ~shift_bit;
+          register_value = dout_[base_address] & ~shift_bit;
         }
         ROS_DEBUG("modbus_io::write_digital_output_srv service request: OUTPUT=%d, VALUE=%d", (int)req.output + 1,
                   (int)req.value);
 
         register_value = switchEndianness(register_value);
-        iret = modbus_write_register(mb_, digital_outputs_addr_, register_value);
+        iret = modbus_write_register(mb_, digital_outputs_addr_ + base_address, register_value);
         if (iret != 1)
           dealWithModbusError();
       }
@@ -672,11 +687,11 @@ public:
         shift_bit = (uint16_t)1 << req.output;  // shifts req.output number to the left
         if (req.value)
         {
-          register_value = din_ | shift_bit;
+          register_value = din_[0] | shift_bit;
         }
         else
         {
-          register_value = din_ & ~shift_bit;
+          register_value = din_[0] & ~shift_bit;
         }
         ROS_DEBUG("modbus_io::write_digital_input_srv service request: INPUT=%d, VALUE=%d", (int)req.output + 1,
                   (int)req.value);
