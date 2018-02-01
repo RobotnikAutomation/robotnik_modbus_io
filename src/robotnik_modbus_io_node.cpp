@@ -54,6 +54,8 @@
 #include <std_msgs/Bool.h>
 #include <robotnik_msgs/inputs_outputs.h>
 #include <robotnik_msgs/set_digital_output.h>
+#include <robotnik_msgs/set_modbus_register.h>
+#include <robotnik_msgs/get_modbus_register.h>
 #include <robotnik_msgs/State.h>
 
 #include <modbus.h>
@@ -101,6 +103,9 @@ public:
   ros::Publisher state_pub_;
   ros::ServiceServer modbus_io_write_digital_srv_;
   ros::ServiceServer modbus_io_write_digital_input_srv_;
+
+  ros::ServiceServer set_modbus_register_srv_;
+  ros::ServiceServer get_modbus_register_srv_;
 
   bool running_;
   // Config params
@@ -218,6 +223,11 @@ public:
         private_node_handle_.advertiseService("write_digital_output", &modbusNode::write_digital_output_srv, this);
     modbus_io_write_digital_input_srv_ =
         private_node_handle_.advertiseService("write_digital_input", &modbusNode::write_digital_input_srv, this);
+
+    set_modbus_register_srv_ =
+        private_node_handle_.advertiseService("set_modbus_register", &modbusNode::set_modbus_register_cb, this);
+    get_modbus_register_srv_ =
+        private_node_handle_.advertiseService("get_modbus_register", &modbusNode::get_modbus_register_cb, this);
 
     self_test_.add("Connect Test", this, &modbusNode::ConnectTest);
 
@@ -585,6 +595,34 @@ public:
     }
     pthread_mutex_unlock(&lock_);
     return res.ret;
+  }
+
+  bool set_modbus_register_cb(robotnik_msgs::set_modbus_register::Request& req,
+                              robotnik_msgs::set_modbus_register::Response& res)
+  {
+    int iret = modbus_write_register(mb_, req.address, req.value);
+    if (iret != 1)
+    {
+      dealWithModbusError();
+      res.ret = false;
+      return true;
+    }
+    res.ret = true;
+    return true;
+  }
+
+  bool get_modbus_register_cb(robotnik_msgs::get_modbus_register::Request& req,
+                              robotnik_msgs::get_modbus_register::Response& res)
+  {
+    int iret = modbus_read_registers(mb_, req.address, 1, &res.value);
+    if (iret != 1)
+    {
+      dealWithModbusError();
+      res.ret = false;
+      return true;
+    }
+    res.ret = true;
+    return true;
   }
 
   // Used for testing
