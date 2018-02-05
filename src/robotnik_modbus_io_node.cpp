@@ -466,7 +466,10 @@ public:
     // Read digital 16 bit inputs registers. Each bit is an input
     iret = modbus_read_registers(mb_, digital_inputs_addr_, registers_for_io_, tab_reg_);
     if (iret != registers_for_io_)
+    {
       dealWithModbusError();
+      return;
+    }
     for (int j = 0; j < registers_for_io_; j++)
     {
       x = switchEndianness(tab_reg_[j]);
@@ -481,7 +484,10 @@ public:
 
     iret = modbus_read_registers(mb_, digital_outputs_addr_, registers_for_io_, tab_reg_);
     if (iret != registers_for_io_)
+    {
       dealWithModbusError();
+      return;
+    }
     for (int j = 0; j < registers_for_io_; j++)
     {
       x = switchEndianness(tab_reg_[j]);
@@ -550,10 +556,7 @@ public:
     {
       if (req.value)
       {
-        if (digital_outputs_ == 8)
-          register_value = 0x00FF;
-        else if (digital_outputs_ == 16)
-          register_value = 0xFFFF;
+        register_value = 0xFFFF;
         ROS_DEBUG("modbus_io::write_digital_output_srv: ALL OUTPUTS ENABLED (out = %d)", out);
       }
       else
@@ -562,9 +565,15 @@ public:
         ROS_DEBUG("modbus_io::write_digital_output_srv: ALL OUTPUTS DISABLED (out = %d)", out);
       }
       register_value = switchEndianness(register_value);
-      iret = modbus_write_register(mb_, digital_outputs_addr_, register_value);
-      if (iret != 1)
-        dealWithModbusError();
+      for (int j = 0; j < registers_for_io_; j++)
+      {
+        iret = modbus_write_register(mb_, digital_outputs_addr_ + j, register_value);
+        if (iret != 1)
+        {
+          dealWithModbusError();
+          return false;
+        }
+      }
     }
     else
     {
@@ -597,7 +606,10 @@ public:
         register_value = switchEndianness(register_value);
         iret = modbus_write_register(mb_, digital_outputs_addr_ + base_address, register_value);
         if (iret != 1)
+        {
           dealWithModbusError();
+          return false;
+        }
       }
     }
     if (iret < 0)
@@ -670,7 +682,10 @@ public:
       }
       iret = modbus_write_register(mb_, digital_inputs_addr_, register_value);
       if (iret != 1)
+      {
         dealWithModbusError();
+        return false;
+      }
     }
     else
     {
@@ -697,7 +712,10 @@ public:
                   (int)req.value);
         iret = modbus_write_register(mb_, digital_inputs_addr_, register_value);
         if (iret != 1)
+        {
           dealWithModbusError();
+          return false;
+        }
       }
     }
     if (iret < 0)
