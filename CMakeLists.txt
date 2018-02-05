@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(robotnik_modbus_io)
 
+set(CMAKE_BUILD_TYPE Debug)
+
 find_package(catkin REQUIRED COMPONENTS
     roscpp
     self_test
