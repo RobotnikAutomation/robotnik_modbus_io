@@ -492,7 +492,7 @@ public:
     {
       x = switchEndianness(tab_reg_[j]);
       dout_[j] = x;
-      ROS_INFO("%d %d %d", j, x, tab_reg_[j]);
+      //ROS_INFO("%d %d %d", j, x, tab_reg_[j]);
 
       // XXX: for vulcano2 modbus module, we only use the LOW/HIGH byte of the register
       for (int i = 0; i < 8; i++)
