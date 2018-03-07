@@ -9,7 +9,25 @@ find_package(catkin REQUIRED COMPONENTS
     diagnostic_updater
     std_srvs
     robotnik_msgs
-    )
+    std_msgs
+    message_generation    
+)
+
+add_message_files(
+   FILES
+   modbus_inputs.msg
+)
+
+add_service_files(
+   FILES
+   write_modbus.srv
+)
+
+
+generate_messages(
+   DEPENDENCIES
+   std_msgs  # Or other packages containing msgs
+)
 
 catkin_package(
   #INCLUDE_DIRS include
@@ -24,7 +42,7 @@ catkin_package(
 
 include_directories(
 	include
-	/usr/include/modbus
+	/usr/local/include/modbus
 	${catkin_INCLUDE_DIRS}
 )
 

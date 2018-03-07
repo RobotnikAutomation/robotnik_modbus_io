@@ -1,28 +1,26 @@
-#robotnik_modbus_io
+# robotnik_modbus_io
 
-##Dependencies
+## Dependencies
 
-###Libraries
+### Libraries
 
-* Modbus library
+* [Modbus library v3.1.4](http://libmodbus.org/2016/libmodbus-v3-1-4/)
+
 ``` 
 $ sudo apt-get install libmodbus-dev
 ``` 
 
-###ROS dependencies
+### ROS dependencies
 
-* robotnik_msgs
-``` 
-$ sudo apt-get install ros-indigo-robotnik-msgs
-``` 
+* [robotnik_msgs](https://github.com/RobotnikAutomation/robotnik_msgs)
 
-##Start-up
+## Start-up
 
 This component is intended to set and read digital I/O from a modbus server.
 
 To test the component:
 
-* Check that IP of the modbus I/O is correct (by default 192.168.1.195)
+* Check that IP of the modbus is correct (by default 192.168.0.195)
 
 * Run the node
 
@@ -30,26 +28,21 @@ To test the component:
 $ roslaunch robotnik_modbus_io robotnik_modbus_io.launch
 ```
 
-* View digital and analog input status
+* View input status
 
 ```
-$ rostopic echo /robotnik_modbus_io/input_output
+$ rostopic echo /robotnik_modbus_io/inputs
 
-digital_inputs: [False, True, False, True, True, False, False, False]
-digital_outputs: [False, False, False, False, False, False, False, False]
-analog_inputs: []
-analog_outputs: []
-
+inputs: [False, True, False, True, True, False, False, False, ...]
 ```
 
-* Set digital outputs
+* Set outputs
 
 ```
-# enables the output 3
-$ rosservice call /robotnik_modbus_io/write_digital_output 3 true
-# disables the output 3
-$ rosservice call /robotnik_modbus_io/write_digital_output 3 false
-# disables all the outputs
-$ rosservice call /robotnik_modbus_io/write_digital_output 0 false
+# enables the bit 2 in the register number 0
+$ rosservice call /robotnik_modbus_io/write_in_register "n_register: 0 bit: 2 value: 1"
+
+# disenables the bit 2 in the register number 0
+$ rosservice call /robotnik_modbus_io/write_in_register "n_register: 0 bit: 2 value: 0"
 ```
 

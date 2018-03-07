@@ -1,0 +1,5 @@
+int8 n_register
+int8 bit
+int8 value
+---
+bool ret
