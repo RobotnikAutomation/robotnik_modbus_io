@@ -4,8 +4,10 @@
   <node pkg="robotnik_modbus_io" type="robotnik_modbus_io_node" name="robotnik_modbus_io" output="screen">
 	<param name="ip_address" type="string" value="192.168.0.195" />
   <param name="port" value="502"/>
-  <param name="writing_addr" value="1999" />
-	<param name="reading_addr" value="999"/>
+  <param name="digital_inputs_addr" value="999" />
+  <param name="digital_outputs_addr" value="1999"/> 
+  <param name="digital_inputs" value="400"/>
+  <param name="digital_outputs" value="80"/>
 	<param name="big_endian" value="false"/>
   </node>
 

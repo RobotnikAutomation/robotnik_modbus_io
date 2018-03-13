@@ -9,18 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
     diagnostic_updater
     std_srvs
     robotnik_msgs
-    std_msgs
-    message_generation    
-)
-
-add_message_files(
-   FILES
-   modbus_inputs.msg
-)
-
-add_service_files(
-   FILES
-   write_modbus.srv
+    std_msgs    
 )
 
 
