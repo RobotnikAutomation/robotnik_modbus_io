@@ -242,7 +242,7 @@ public:
     reading_.analog_inputs.resize(analog_inputs_);
     max_delay_ = 1.0 / MODBUS_DESIRED_FREQ;
 
-    registers_for_io_ = 10;
+    registers_for_io_ = 2;
     din_ = new uint16_t[registers_for_io_];
     dout_ = new uint16_t[registers_for_io_];
 
@@ -308,7 +308,7 @@ public:
       return -1;
     }
     ROS_INFO("modbus_io::connectModbus: connected to %s:%d!", ip_address_.c_str(), port_);
-
+/*
     // reset watchdog
     int watchdog_reset_addr = 0x1043;
     int16_t watchdog_reset_value = 0xc1;
@@ -316,7 +316,7 @@ public:
     {
       ROS_WARN("modbus_io::connectModbus: error while resetting watchdog. Possible malfunction");
     }
-
+*/
     return 0;
   }
 
@@ -470,16 +470,24 @@ public:
       dealWithModbusError();
       return;
     }
-    for (int j = 0; j < registers_for_io_; j++)
+    for (int j = 0; j < registers_for_io_ - 1; j++)
     {
       x = switchEndianness(tab_reg_[j]);
       din_[j] = x;
-      // XXX: for vulcano2 modbus module, we only use the LOW/HIGH byte of the register
-      for (int i = 0; i < 8; i++)
+      for (int i = 0; i < 16; i++)
       {
-        data.digital_inputs[i + 8 * j] = x & 1;
+        data.digital_inputs[i + 16 * j] = x & 1;
         x >>= 1;
       }
+    }
+
+    x = switchEndianness(tab_reg_[registers_for_io_ - 1]);
+    din_[registers_for_io_ - 1] = x;
+    int di_dif = registers_for_io_*16 - digital_inputs_;
+    for (int i = 0; i < (16-di_dif); i++)
+    {
+      data.digital_inputs[i + 16 * (registers_for_io_ - 1)] = x & 1;
+      x >>= 1;
     }
 
     iret = modbus_read_registers(mb_, digital_outputs_addr_, registers_for_io_, tab_reg_);
@@ -488,19 +496,29 @@ public:
       dealWithModbusError();
       return;
     }
-    for (int j = 0; j < registers_for_io_; j++)
+    for (int j = 0; j < registers_for_io_ - 1; j++)
     {
       x = switchEndianness(tab_reg_[j]);
       dout_[j] = x;
       //ROS_INFO("%d %d %d", j, x, tab_reg_[j]);
 
-      // XXX: for vulcano2 modbus module, we only use the LOW/HIGH byte of the register
-      for (int i = 0; i < 8; i++)
+      for (int i = 0; i < 16; i++)
       {
-        data.digital_outputs[i + 8 * j] = x & 1;
+        data.digital_outputs[i + 16 * j] = x & 1;
         x >>= 1;
       }
     }
+
+    x = switchEndianness(tab_reg_[registers_for_io_ - 1]);
+    dout_[registers_for_io_ - 1] = x;
+    //ROS_INFO("%d %d %d", j, x, tab_reg_[j]);
+    int do_dif = registers_for_io_*16 - digital_outputs_;
+    for (int i = 0; i < (16-do_dif); i++)
+    {
+      data.digital_outputs[i + 16 * registers_for_io_ - 1] = x & 1;
+      x >>= 1;
+    }
+
     ////
     ////    // ANALOG INPUTS
     ////    for (int i = 0; i < analog_inputs_; i++)
@@ -588,9 +606,8 @@ public:
       }
       else
       {
-        // XXX we operate in the LOW/HIGH byte of the register, a
-        int base_address = req.output / 8;
-        int output_number_in_register = req.output % 8;
+        int base_address = req.output / 16;
+        int output_number_in_register = req.output % 16;
         shift_bit = (uint16_t)1 << output_number_in_register;  // shifts req.output number to the left
         if (req.value)
         {
