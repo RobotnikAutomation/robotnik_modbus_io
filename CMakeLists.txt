@@ -35,3 +35,10 @@ target_link_libraries(
 	modbus
 	${catkin_LIBRARIES}
 )
+add_executable(robotnik_modbus_io_node src/robotnik_modbus_io_node.cpp)
+add_dependencies(robotnik_modbus_io_node robotnik_msgs_generate_messages_cpp)
+target_link_libraries(
+	robotnik_modbus_io_node
+	modbus
+	${catkin_LIBRARIES}
+)
