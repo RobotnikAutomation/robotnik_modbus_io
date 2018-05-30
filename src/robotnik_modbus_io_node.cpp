@@ -242,7 +242,7 @@ public:
     registers_for_io_ = 20;
     dout_ = new uint16_t[5];
 
-    // Initializes the output data vector
+    // Initializes to zero the output data vector
     for(int i=0; i<5; i++){
       dout_[i] = 0;
     }
@@ -487,27 +487,17 @@ public:
       dealWithModbusError();
       return;
     }
+*/
     for (int j = 0; j < 5; j++)
     {
-      x = switchEndianness(tab_reg_[j]);
-      dout_[j] = x;
+      x = switchEndianness(dout_[j]);
       for (int i = 0; i < 16; i++)
       {
         data.digital_outputs[i + 16 * j] = x & 1;
         x >>= 1;
       }
     }
-*/
-    ////
-    ////    // ANALOG INPUTS
-    ////    for (int i = 0; i < analog_inputs_; i++)
-    ////    {
-    ////      //
-    ////      // READS every register independently
-    ////      modbus_read_registers(mb_, analog_inputs_addr_[i], 1, tab_reg_);
-    ////      data.analog_inputs[i] = double(tab_reg_[0] / analog_register_divisor_) * analog_register_multiplier_;
-    ////      // ROS_INFO("reading analog %d, address %d [register = %x", i+1, analog_inputs_addr_[i], tab_reg_[0]);
-    ////    }
+
   }
 
   void deviceStatus(diagnostic_updater::DiagnosticStatusWrapper& status)
@@ -614,9 +604,6 @@ public:
     {
       res.ret = true;
     }
-     for(int i = 0; i < 5; i++){
-      ROS_INFO("register %d: value: %d", i, dout_[i]);
-    }
     pthread_mutex_unlock(&lock_);
     return res.ret;
   }
@@ -624,15 +611,24 @@ public:
   bool set_modbus_register_cb(robotnik_msgs::set_modbus_register::Request& req,
                               robotnik_msgs::set_modbus_register::Response& res)
   {
-    int iret = modbus_write_register(mb_, req.address, req.value);
-    if (iret != 1)
-    {
-      dealWithModbusError();
+    int reg = req.address - digital_outputs_addr_;
+    int dout_length = sizeof(dout_)/sizeof(*dout_);
+    if(reg>0 && reg<dout_length){
+      dout_[reg] = (uint16_t) req.value;
+      int iret = modbus_write_registers(mb_, digital_outputs_addr_, 5, dout_);
+      if (iret != 5)
+      {
+        dealWithModbusError();
+        res.ret = false;
+        return true;
+      }
+      res.ret = true;
+      return true;
+    }else{
       res.ret = false;
       return true;
     }
-    res.ret = true;
-    return true;
+    
   }
 
   bool get_modbus_register_cb(robotnik_msgs::get_modbus_register::Request& req,
