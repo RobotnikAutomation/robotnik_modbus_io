@@ -31,7 +31,7 @@ catkin_package(
 
 include_directories(
 	include
-	/usr/local/include/modbus
+	/usr/include/modbus
 	${catkin_INCLUDE_DIRS}
 )
 
