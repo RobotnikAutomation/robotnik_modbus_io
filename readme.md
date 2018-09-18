@@ -1,22 +1,38 @@
-#robotnik_modbus_io
+# robotnik_modbus_io
 
-##Dependencies
+## Dependencies
 
-###Libraries
+### Libraries
 
 * Modbus library
 ``` 
 $ sudo apt-get install libmodbus-dev
 ``` 
+or download it from here (Last version tested 3.1.4):
 
-###ROS dependencies
+http://libmodbus.org/download 
+
+### CMakeList
+
+If you compile this package and you have any issue related with modbus headers, check where the modbus library was installed, by default CMakeList will look for it here: 
+
+```
+include_directories(
+	include
+	/usr/include/modbus
+	${catkin_INCLUDE_DIRS}
+)
+```
+
+
+### ROS dependencies
 
 * robotnik_msgs
 ``` 
 $ sudo apt-get install ros-indigo-robotnik-msgs
 ``` 
 
-##Start-up
+## Start-up
 
 This component is intended to set and read digital I/O from a modbus server.
 
