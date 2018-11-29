@@ -533,12 +533,12 @@ public:
   bool write_digital_output_srv(robotnik_msgs::set_digital_output::Request& req,
                                 robotnik_msgs::set_digital_output::Response& res)
   {
-    pthread_mutex_lock(&lock_);
+    //pthread_mutex_lock(&lock_);
 
     int iret;
     uint16_t register_value, shift_bit;  // register value, bit
     int out = req.output;
-
+    //ROS_INFO("modbus_io::write_digital_output_srv: out %d to %d", out, req.value);
     if (out <= 0)
     {
       if (req.value)
@@ -604,8 +604,8 @@ public:
     {
       res.ret = true;
     }
-    pthread_mutex_unlock(&lock_);
-    return res.ret;
+    //pthread_mutex_unlock(&lock_);
+    return true;
   }
 
   bool set_modbus_register_cb(robotnik_msgs::set_modbus_register::Request& req,
@@ -613,6 +613,9 @@ public:
   {
     int reg = req.address - digital_outputs_addr_;
     int dout_length = sizeof(dout_)/sizeof(*dout_);
+    //ROS_WARN("modbus_io::set_modbus_register_cb: reg %d to %d", req.address, req.value);
+    res.ret = false;
+    
     if(reg>0 && reg<dout_length){
       dout_[reg] = (uint16_t) req.value;
       int iret = modbus_write_registers(mb_, digital_outputs_addr_, 5, dout_);
@@ -620,15 +623,15 @@ public:
       {
         dealWithModbusError();
         res.ret = false;
-        return true;
+
       }
       res.ret = true;
-      return true;
+ 
     }else{
       res.ret = false;
-      return true;
     }
     
+    return true;
   }
 
   bool get_modbus_register_cb(robotnik_msgs::get_modbus_register::Request& req,
