@@ -52,6 +52,8 @@
 
 #include <std_srvs/Empty.h>
 #include <std_msgs/Bool.h>
+#include <robotnik_msgs/Register.h>
+#include <robotnik_msgs/Registers.h>
 #include <robotnik_msgs/inputs_outputs.h>
 #include <robotnik_msgs/set_digital_output.h>
 #include <robotnik_msgs/set_modbus_register.h>
@@ -71,6 +73,7 @@
 #define MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS 4  // Min. number of digital outputs (factory default)
 #define MODBUS_DEFAULT_MIN_DIGITAL_INPUTS 8   // Min. number of digital inputs (factory default)
 #define MODBUS_DEFAULT_MIN_ANALOG_INPUTS 0    // Min. number of analog inputs (factory default)
+#define MODBUS_DEFAULT_MIN_REGISTERS 0        // Min. number of registers to read
 
 #define MODBUS_DEFAULT_ANALOG_INPUT_DIVISOR 30000.0
 #define MODBUS_DEFAULT_ANALOG_INPUT_MULTIPLIER 10.0
@@ -87,6 +90,7 @@ class modbusNode
 public:
   // Robotnik_msgs object
   robotnik_msgs::inputs_outputs reading_;
+  robotnik_msgs::Registers registers_;
 
   // tcp/ip data
   string ip_address_;
@@ -101,6 +105,7 @@ public:
   ros::NodeHandle node_handle_;
   ros::NodeHandle private_node_handle_;
   ros::Publisher modbus_io_data_pub_;
+  ros::Publisher modbus_io_registers_pub_;
   ros::Publisher state_pub_;
   ros::ServiceServer modbus_io_write_digital_srv_;
   ros::ServiceServer modbus_io_write_digital_input_srv_;
@@ -115,7 +120,11 @@ public:
   int analog_inputs_;
   int digital_inputs_addr_;
   int digital_outputs_addr_;
+  int read_registers_addr_;
+  int number_of_registers_to_read_;
   bool big_endian_;
+  // Flag to read full registers automatically
+  bool read_modbus_registers_enabled_;
 
   // Error counters and flags
   int error_count_;
@@ -166,6 +175,7 @@ public:
     private_node_handle_.param("digital_outputs", digital_outputs_, MODBUS_DEFAULT_DIGITAL_OUTPUTS);
     private_node_handle_.param("digital_inputs", digital_inputs_, MODBUS_DEFAULT_DIGITAL_INPUTS);
     private_node_handle_.param("analog_inputs", analog_inputs_, MODBUS_DEFAULT_MIN_ANALOG_INPUTS);
+    private_node_handle_.param("number_of_registers_to_read", number_of_registers_to_read_, MODBUS_DEFAULT_MIN_REGISTERS);
     private_node_handle_.param("analog_register_divisor", analog_register_divisor_,
                                MODBUS_DEFAULT_ANALOG_INPUT_DIVISOR);
     private_node_handle_.param("analog_register_multiplier", analog_register_multiplier_,
@@ -174,8 +184,10 @@ public:
 
     private_node_handle_.param("digital_inputs_addr", digital_inputs_addr_, 0);
     private_node_handle_.param("digital_outputs_addr", digital_outputs_addr_, 10);  // new used
+    private_node_handle_.param("read_registers_addr", read_registers_addr_, 10);
 
     private_node_handle_.param<bool>("big_endian", big_endian_, MODBUS_DEFAULT_BIG_ENDIAN);
+    private_node_handle_.param<bool>("read_modbus_registers_enabled", read_modbus_registers_enabled_, false);
     // Checks the min num of digital outputs
     /*if(digital_outputs_ < MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS){
       digital_outputs_ = MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS;
@@ -218,6 +230,7 @@ public:
              digital_outputs_addr_, digital_inputs_, digital_inputs_addr_, analog_inputs_);
 
     modbus_io_data_pub_ = private_node_handle_.advertise<robotnik_msgs::inputs_outputs>("input_output", 100);
+    modbus_io_registers_pub_ = private_node_handle_.advertise<robotnik_msgs::Registers>("registers", 100);
     state_pub_ = private_node_handle_.advertise<robotnik_msgs::State>("state", 1);
 
     modbus_io_write_digital_srv_ =
@@ -237,6 +250,7 @@ public:
     reading_.digital_inputs.resize(digital_inputs_);
     reading_.digital_outputs.resize(digital_outputs_);
     reading_.analog_inputs.resize(analog_inputs_);
+    registers_.registers.resize(number_of_registers_to_read_);
     max_delay_ = 1.0 / MODBUS_DESIRED_FREQ;
 
     registers_for_io_ = 20;
@@ -344,7 +358,12 @@ public:
     }
 
     getData(reading_);
-
+    
+    if(read_modbus_registers_enabled_)
+    {
+		getIntData(registers_);
+	}
+	
     double endtime = ros::Time::now().toSec();
     if (endtime - starttime > max_delay_)
     {
@@ -356,6 +375,7 @@ public:
     prevtime = starttime;
     starttime = ros::Time::now().toSec();
     modbus_io_data_pub_.publish(reading_);
+    modbus_io_registers_pub_.publish(registers_);
 
     endtime = ros::Time::now().toSec();
     if (endtime - starttime > max_delay_)
@@ -500,6 +520,30 @@ public:
 
   }
 
+  void getIntData(robotnik_msgs::Registers& registers)
+  {
+
+    int16_t x;
+    int iret;
+
+    // Read digital 16 bit inputs registers. Each bit is an input
+    iret = modbus_read_registers(mb_, read_registers_addr_, number_of_registers_to_read_, tab_reg_);
+    if (iret != number_of_registers_to_read_)
+    {
+      dealWithModbusError();
+      return;
+    }
+    for (int j = 0; j < number_of_registers_to_read_; j++)
+    {
+      x = switchEndianness(tab_reg_[j]);
+      robotnik_msgs::Register reg;
+      reg.id = read_registers_addr_ + j;
+      reg.value = x;
+      registers_.registers.push_back(reg);
+    }
+
+  }
+
   void deviceStatus(diagnostic_updater::DiagnosticStatusWrapper& status)
   {
     if (!running_)
@@ -611,14 +655,14 @@ public:
   bool set_modbus_register_cb(robotnik_msgs::set_modbus_register::Request& req,
                               robotnik_msgs::set_modbus_register::Response& res)
   {
-    int reg = req.address - digital_outputs_addr_;
-    int dout_length = sizeof(dout_)/sizeof(*dout_);
+    //int reg = req.address - digital_outputs_addr_;
+    //int dout_length = sizeof(dout_)/sizeof(*dout_);
     //ROS_WARN("modbus_io::set_modbus_register_cb: reg %d to %d", req.address, req.value);
     res.ret = false;
-    
-    if(reg>0 && reg<dout_length){
-      dout_[reg] = (uint16_t) req.value;
-      int iret = modbus_write_registers(mb_, digital_outputs_addr_, 5, dout_);
+
+    //if(reg>0 && reg<dout_length){
+      //dout_[reg] = (uint16_t) req.value;
+      int iret = modbus_write_register(mb_, req.address, (uint16_t) req.value);
       if (iret != 5)
       {
         dealWithModbusError();
@@ -626,11 +670,11 @@ public:
 
       }
       res.ret = true;
- 
-    }else{
-      res.ret = false;
-    }
-    
+
+    //}else{
+    //  res.ret = false;
+    //}
+
     return true;
   }
 
