@@ -111,6 +111,7 @@ public:
   ros::ServiceServer modbus_io_write_digital_input_srv_;
 
   ros::ServiceServer set_modbus_register_srv_;
+  ros::ServiceServer set_modbus_registers_srv_;
   ros::ServiceServer get_modbus_register_srv_;
 
   bool running_;
@@ -155,6 +156,8 @@ public:
   int modbus_errors_;
   //! Saves the time of the error
   ros::Time communication_error_time;
+  
+  int number_of_outputs_;
 
   pthread_mutex_t lock_;
   // Constructor
@@ -237,6 +240,8 @@ public:
         private_node_handle_.advertiseService("write_digital_output", &modbusNode::write_digital_output_srv, this);
     set_modbus_register_srv_ =
         private_node_handle_.advertiseService("set_modbus_register", &modbusNode::set_modbus_register_cb, this);
+    set_modbus_registers_srv_ =
+        private_node_handle_.advertiseService("set_modbus_registers", &modbusNode::set_modbus_registers_cb, this);
     get_modbus_register_srv_ =
         private_node_handle_.advertiseService("get_modbus_register", &modbusNode::get_modbus_register_cb, this);
 
@@ -254,10 +259,11 @@ public:
     max_delay_ = 1.0 / MODBUS_DESIRED_FREQ;
 
     registers_for_io_ = 20;
-    dout_ = new uint16_t[5];
+    number_of_outputs_ = 5;
+    dout_ = new uint16_t[number_of_outputs_];
 
     // Initializes to zero the output data vector
-    for(int i=0; i<5; i++){
+    for(int i=0; i<number_of_outputs_; i++){
       dout_[i] = 0;
     }
 
@@ -319,7 +325,7 @@ public:
     if (modbus_connect(mb_) == -1)
     {
       dealWithModbusError();
-      ROS_ERROR("modbus_io::connectModbus: connection Error!");
+      ROS_ERROR("modbus_io::connectModbus: connection Error to %s:%d!", ip_address_.c_str(), port_);
       return -1;
     }
     ROS_INFO("modbus_io::connectModbus: connected to %s:%d!", ip_address_.c_str(), port_);
@@ -357,13 +363,13 @@ public:
       slow_count_++;
     }
 
-    getData(reading_);
-    
     if(read_modbus_registers_enabled_)
     {
-		getIntData(registers_);
-	}
-	
+      getIntData(registers_);
+    } else {
+      getData(reading_);
+    }
+
     double endtime = ros::Time::now().toSec();
     if (endtime - starttime > max_delay_)
     {
@@ -508,7 +514,7 @@ public:
       return;
     }
 */
-    for (int j = 0; j < 5; j++)
+    for (int j = 0; j < number_of_outputs_; j++)
     {
       x = switchEndianness(dout_[j]);
       for (int i = 0; i < 16; i++)
@@ -579,7 +585,7 @@ public:
   {
     //pthread_mutex_lock(&lock_);
 
-    int iret;
+    int iret = -1;
     uint16_t register_value, shift_bit;  // register value, bit
     int out = req.output;
     //ROS_INFO("modbus_io::write_digital_output_srv: out %d to %d", out, req.value);
@@ -596,12 +602,12 @@ public:
         ROS_DEBUG("modbus_io::write_digital_output_srv: ALL OUTPUTS DISABLED (out = %d)", out);
       }
       register_value = switchEndianness(register_value);
-        iret = modbus_write_registers(mb_, digital_outputs_addr_, 5, dout_);
-        if (iret != 5)
-        {
-          dealWithModbusError();
-          return false;
-        }
+      iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
+      if (iret != number_of_outputs_)
+      {
+        dealWithModbusError();
+        res.ret = false;
+      }
     }
     else
     {
@@ -612,7 +618,7 @@ public:
         ROS_ERROR("modbus_io::write_digital_output_srv: OUTPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output + 1,
                   this->digital_outputs_);
         pthread_mutex_unlock(&lock_);
-        return false;
+        res.ret = false;
       }
       else
       {
@@ -632,11 +638,13 @@ public:
 
         register_value = switchEndianness(register_value);
         dout_[base_address] = register_value;
-        iret = modbus_write_registers(mb_, digital_outputs_addr_, 5, dout_);
-        if (iret != 5)
+        iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
+        //ROS_INFO("modbus_io::write_digital_output_srv service request: OUTPUT=%d, VALUE=%d, address = %d", (int)req.output + 1,
+          //        (int)req.value,digital_outputs_addr_);
+        if (iret != number_of_outputs_)
         {
           dealWithModbusError();
-          return false;
+          res.ret = false;
         }
       }
     }
@@ -652,29 +660,49 @@ public:
     return true;
   }
 
+  // Writes registers by using function modbus_write_register
   bool set_modbus_register_cb(robotnik_msgs::set_modbus_register::Request& req,
                               robotnik_msgs::set_modbus_register::Response& res)
   {
-    //int reg = req.address - digital_outputs_addr_;
-    //int dout_length = sizeof(dout_)/sizeof(*dout_);
+    res.ret = false;
+
+    int iret = modbus_write_register(mb_, req.address, (uint16_t) req.value);
+    if (iret != number_of_outputs_)
+    {
+      dealWithModbusError();
+      res.ret = false;
+
+    }
+    res.ret = true;
+
+    return true;
+  }
+   
+  // Writes registers by using function modbus_write_registers based on initial digital_outputs_addr_
+  bool set_modbus_registers_cb(robotnik_msgs::set_modbus_register::Request& req,
+                              robotnik_msgs::set_modbus_register::Response& res)
+  {
+    int reg = req.address - digital_outputs_addr_;
+    int dout_length = number_of_outputs_; //sizeof(*dout_);
     //ROS_WARN("modbus_io::set_modbus_register_cb: reg %d to %d", req.address, req.value);
     res.ret = false;
 
-    //if(reg>0 && reg<dout_length){
-      //dout_[reg] = (uint16_t) req.value;
-      int iret = modbus_write_register(mb_, req.address, (uint16_t) req.value);
-      if (iret != 5)
+    if(reg>0 && reg<dout_length)
+    {
+      dout_[reg] = switchEndianness((uint16_t) req.value);
+      int iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
+      //ROS_INFO("modbus_io::set_modbus_registers_cb: reg = %d, address = %d, value = %x", reg, digital_outputs_addr_+reg, dout_[reg] );
+      if (iret != number_of_outputs_)
       {
         dealWithModbusError();
         res.ret = false;
 
-      }
-      res.ret = true;
-
-    //}else{
-    //  res.ret = false;
-    //}
-
+      }else
+        res.ret = true;
+    }else
+    {
+	  ROS_ERROR("modbus_io::set_modbus_registers_cb: register out of range: reg = %d, length allowed = %d", reg, dout_length);
+	}
     return true;
   }
 
