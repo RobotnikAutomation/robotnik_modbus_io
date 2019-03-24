@@ -317,7 +317,7 @@ public:
 
   int connectModbus()
   {
-    ROS_INFO("modbus_io::connectModbus: connecting to %s:%d", ip_address_.c_str(), port_);
+    ROS_INFO_THROTTLE(10, "modbus_io::connectModbus: connecting to %s:%d", ip_address_.c_str(), port_);
     mb_ = modbus_new_tcp(ip_address_.c_str(), port_);
     if (mb_ == NULL)
     {
@@ -327,17 +327,17 @@ public:
     if (modbus_connect(mb_) == -1)
     {
       dealWithModbusError();
-      ROS_ERROR("modbus_io::connectModbus: connection Error to %s:%d!", ip_address_.c_str(), port_);
+      ROS_ERROR_THROTTLE(10, "modbus_io::connectModbus: connection Error to %s:%d!", ip_address_.c_str(), port_);
       return -1;
     }
-    ROS_INFO("modbus_io::connectModbus: connected to %s:%d!", ip_address_.c_str(), port_);
+    ROS_INFO_THROTTLE(10, "modbus_io::connectModbus: connected to %s:%d!", ip_address_.c_str(), port_);
 
     // Set the slave
     int iret = modbus_set_slave(mb_, SLAVE_NUMBER);
     if (iret == -1)
     {
       dealWithModbusError();
-      ROS_ERROR("modbus_io::setSlave: Invalid slave ID");
+      ROS_ERROR_THROTTLE(10, "modbus_io::setSlave: Invalid slave ID");
       return -1;
     }
 
@@ -349,7 +349,7 @@ public:
     modbus_close(mb_);
     modbus_free(mb_);
 
-    ROS_INFO("modbus_io::disconnectModbus: disconnected from %s:%d!", ip_address_.c_str(), port_);
+    ROS_INFO_THROTTLE(10, "modbus_io::disconnectModbus: disconnected from %s:%d!", ip_address_.c_str(), port_);
     return 0;
   }
 
@@ -378,7 +378,7 @@ public:
     double endtime = ros::Time::now().toSec();
     if (endtime - starttime > max_delay_)
     {
-      ROS_WARN("modbus_io::read_and_publish: Gathering data took %f ms. Nominal is %f ms.",
+      ROS_WARN_THROTTLE(10, "modbus_io::read_and_publish: Gathering data took %f ms. Nominal is %f ms.",
                1000 * (endtime - starttime), 1000 * max_delay_);
       was_slow_ = "Full modbus_interface loop was slow.";
       slow_count_++;
@@ -391,7 +391,7 @@ public:
     endtime = ros::Time::now().toSec();
     if (endtime - starttime > max_delay_)
     {
-      ROS_WARN("modbus_io::read_and_publish: Publishing took %f ms. Nominal is %f ms.", 1000 * (endtime - starttime),
+      ROS_WARN_THROTTLE(10, "modbus_io::read_and_publish: Publishing took %f ms. Nominal is %f ms.", 1000 * (endtime - starttime),
                1000 * max_delay_);
       was_slow_ = "Full modbus_io loop was slow.";
       slow_count_++;
@@ -617,7 +617,7 @@ public:
       if (req.output > this->digital_outputs_ - 1)
       {
         res.ret = false;
-        ROS_ERROR("modbus_io::write_digital_output_srv: OUTPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output + 1,
+        ROS_ERROR_THROTTLE(10, "modbus_io::write_digital_output_srv: OUTPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output + 1,
                   this->digital_outputs_);
         pthread_mutex_unlock(&lock_);
         res.ret = false;
@@ -705,7 +705,7 @@ public:
     }
     else
     {
-      ROS_ERROR("modbus_io::set_modbus_registers_cb: register out of range: reg = %d, length allowed = %d", reg,
+      ROS_ERROR_THROTTLE(10, "modbus_io::set_modbus_registers_cb: register out of range: reg = %d, length allowed = %d", reg,
                 dout_length);
     }
     return true;
