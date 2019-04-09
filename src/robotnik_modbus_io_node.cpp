@@ -52,6 +52,8 @@
 
 #include <std_srvs/Empty.h>
 #include <std_msgs/Bool.h>
+#include <robotnik_msgs/Register.h>
+#include <robotnik_msgs/Registers.h>
 #include <robotnik_msgs/inputs_outputs.h>
 #include <robotnik_msgs/set_digital_output.h>
 #include <robotnik_msgs/set_modbus_register.h>
@@ -71,6 +73,7 @@
 #define MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS 4  // Min. number of digital outputs (factory default)
 #define MODBUS_DEFAULT_MIN_DIGITAL_INPUTS 8   // Min. number of digital inputs (factory default)
 #define MODBUS_DEFAULT_MIN_ANALOG_INPUTS 0    // Min. number of analog inputs (factory default)
+#define MODBUS_DEFAULT_MIN_REGISTERS 0        // Min. number of registers to read
 
 #define MODBUS_DEFAULT_ANALOG_INPUT_DIVISOR 30000.0
 #define MODBUS_DEFAULT_ANALOG_INPUT_MULTIPLIER 10.0
@@ -87,6 +90,7 @@ class modbusNode
 public:
   // Robotnik_msgs object
   robotnik_msgs::inputs_outputs reading_;
+  robotnik_msgs::Registers registers_;
 
   // tcp/ip data
   string ip_address_;
@@ -101,11 +105,13 @@ public:
   ros::NodeHandle node_handle_;
   ros::NodeHandle private_node_handle_;
   ros::Publisher modbus_io_data_pub_;
+  ros::Publisher modbus_io_registers_pub_;
   ros::Publisher state_pub_;
   ros::ServiceServer modbus_io_write_digital_srv_;
   ros::ServiceServer modbus_io_write_digital_input_srv_;
 
   ros::ServiceServer set_modbus_register_srv_;
+  ros::ServiceServer set_modbus_registers_srv_;
   ros::ServiceServer get_modbus_register_srv_;
 
   bool running_;
@@ -115,7 +121,11 @@ public:
   int analog_inputs_;
   int digital_inputs_addr_;
   int digital_outputs_addr_;
+  int read_registers_addr_;
+  int number_of_registers_to_read_;
   bool big_endian_;
+  // Flag to read full registers automatically
+  bool read_modbus_registers_enabled_;
 
   // Error counters and flags
   int error_count_;
@@ -147,6 +157,8 @@ public:
   //! Saves the time of the error
   ros::Time communication_error_time;
 
+  int number_of_outputs_;
+
   pthread_mutex_t lock_;
   // Constructor
   modbusNode(ros::NodeHandle h)
@@ -166,6 +178,8 @@ public:
     private_node_handle_.param("digital_outputs", digital_outputs_, MODBUS_DEFAULT_DIGITAL_OUTPUTS);
     private_node_handle_.param("digital_inputs", digital_inputs_, MODBUS_DEFAULT_DIGITAL_INPUTS);
     private_node_handle_.param("analog_inputs", analog_inputs_, MODBUS_DEFAULT_MIN_ANALOG_INPUTS);
+    private_node_handle_.param("number_of_registers_to_read", number_of_registers_to_read_,
+                               MODBUS_DEFAULT_MIN_REGISTERS);
     private_node_handle_.param("analog_register_divisor", analog_register_divisor_,
                                MODBUS_DEFAULT_ANALOG_INPUT_DIVISOR);
     private_node_handle_.param("analog_register_multiplier", analog_register_multiplier_,
@@ -174,8 +188,10 @@ public:
 
     private_node_handle_.param("digital_inputs_addr", digital_inputs_addr_, 0);
     private_node_handle_.param("digital_outputs_addr", digital_outputs_addr_, 10);  // new used
+    private_node_handle_.param("read_registers_addr", read_registers_addr_, 10);
 
     private_node_handle_.param<bool>("big_endian", big_endian_, MODBUS_DEFAULT_BIG_ENDIAN);
+    private_node_handle_.param<bool>("read_modbus_registers_enabled", read_modbus_registers_enabled_, false);
     // Checks the min num of digital outputs
     /*if(digital_outputs_ < MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS){
       digital_outputs_ = MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS;
@@ -218,12 +234,15 @@ public:
              digital_outputs_addr_, digital_inputs_, digital_inputs_addr_, analog_inputs_);
 
     modbus_io_data_pub_ = private_node_handle_.advertise<robotnik_msgs::inputs_outputs>("input_output", 100);
+    modbus_io_registers_pub_ = private_node_handle_.advertise<robotnik_msgs::Registers>("registers", 100);
     state_pub_ = private_node_handle_.advertise<robotnik_msgs::State>("state", 1);
 
     modbus_io_write_digital_srv_ =
         private_node_handle_.advertiseService("write_digital_output", &modbusNode::write_digital_output_srv, this);
     set_modbus_register_srv_ =
         private_node_handle_.advertiseService("set_modbus_register", &modbusNode::set_modbus_register_cb, this);
+    set_modbus_registers_srv_ =
+        private_node_handle_.advertiseService("set_modbus_registers", &modbusNode::set_modbus_registers_cb, this);
     get_modbus_register_srv_ =
         private_node_handle_.advertiseService("get_modbus_register", &modbusNode::get_modbus_register_cb, this);
 
@@ -237,13 +256,16 @@ public:
     reading_.digital_inputs.resize(digital_inputs_);
     reading_.digital_outputs.resize(digital_outputs_);
     reading_.analog_inputs.resize(analog_inputs_);
+    registers_.registers.resize(number_of_registers_to_read_);
     max_delay_ = 1.0 / MODBUS_DESIRED_FREQ;
 
     registers_for_io_ = 20;
-    dout_ = new uint16_t[5];
+    number_of_outputs_ = 5;
+    dout_ = new uint16_t[number_of_outputs_];
 
     // Initializes to zero the output data vector
-    for(int i=0; i<5; i++){
+    for (int i = 0; i < number_of_outputs_; i++)
+    {
       dout_[i] = 0;
     }
 
@@ -295,7 +317,7 @@ public:
 
   int connectModbus()
   {
-    ROS_INFO("modbus_io::connectModbus: connecting to %s:%d", ip_address_.c_str(), port_);
+    ROS_INFO_THROTTLE(10, "modbus_io::connectModbus: connecting to %s:%d", ip_address_.c_str(), port_);
     mb_ = modbus_new_tcp(ip_address_.c_str(), port_);
     if (mb_ == NULL)
     {
@@ -305,16 +327,17 @@ public:
     if (modbus_connect(mb_) == -1)
     {
       dealWithModbusError();
-      ROS_ERROR("modbus_io::connectModbus: connection Error!");
+      ROS_ERROR_THROTTLE(10, "modbus_io::connectModbus: connection Error to %s:%d!", ip_address_.c_str(), port_);
       return -1;
     }
-    ROS_INFO("modbus_io::connectModbus: connected to %s:%d!", ip_address_.c_str(), port_);
+    ROS_INFO_THROTTLE(10, "modbus_io::connectModbus: connected to %s:%d!", ip_address_.c_str(), port_);
 
     // Set the slave
     int iret = modbus_set_slave(mb_, SLAVE_NUMBER);
-    if(iret == -1){
+    if (iret == -1)
+    {
       dealWithModbusError();
-      ROS_ERROR("modbus_io::setSlave: Invalid slave ID");
+      ROS_ERROR_THROTTLE(10, "modbus_io::setSlave: Invalid slave ID");
       return -1;
     }
 
@@ -326,7 +349,7 @@ public:
     modbus_close(mb_);
     modbus_free(mb_);
 
-    ROS_INFO("modbus_io::disconnectModbus: disconnected from %s:%d!", ip_address_.c_str(), port_);
+    ROS_INFO_THROTTLE(10, "modbus_io::disconnectModbus: disconnected from %s:%d!", ip_address_.c_str(), port_);
     return 0;
   }
 
@@ -343,12 +366,19 @@ public:
       slow_count_++;
     }
 
-    getData(reading_);
+    if (read_modbus_registers_enabled_)
+    {
+      getIntData(registers_);
+    }
+    else
+    {
+      getData(reading_);
+    }
 
     double endtime = ros::Time::now().toSec();
     if (endtime - starttime > max_delay_)
     {
-      ROS_WARN("modbus_io::read_and_publish: Gathering data took %f ms. Nominal is %f ms.",
+      ROS_WARN_THROTTLE(10, "modbus_io::read_and_publish: Gathering data took %f ms. Nominal is %f ms.",
                1000 * (endtime - starttime), 1000 * max_delay_);
       was_slow_ = "Full modbus_interface loop was slow.";
       slow_count_++;
@@ -356,11 +386,12 @@ public:
     prevtime = starttime;
     starttime = ros::Time::now().toSec();
     modbus_io_data_pub_.publish(reading_);
+    modbus_io_registers_pub_.publish(registers_);
 
     endtime = ros::Time::now().toSec();
     if (endtime - starttime > max_delay_)
     {
-      ROS_WARN("modbus_io::read_and_publish: Publishing took %f ms. Nominal is %f ms.", 1000 * (endtime - starttime),
+      ROS_WARN_THROTTLE(10, "modbus_io::read_and_publish: Publishing took %f ms. Nominal is %f ms.", 1000 * (endtime - starttime),
                1000 * max_delay_);
       was_slow_ = "Full modbus_io loop was slow.";
       slow_count_++;
@@ -480,7 +511,7 @@ public:
         x >>= 1;
       }
     }
-/*
+    /*
     iret = modbus_read_registers(mb_, digital_outputs_addr_, 5, tab_reg_);
     if (iret != 5)
     {
@@ -488,7 +519,7 @@ public:
       return;
     }
 */
-    for (int j = 0; j < 5; j++)
+    for (int j = 0; j < number_of_outputs_; j++)
     {
       x = switchEndianness(dout_[j]);
       for (int i = 0; i < 16; i++)
@@ -497,7 +528,28 @@ public:
         x >>= 1;
       }
     }
+  }
 
+  void getIntData(robotnik_msgs::Registers& registers)
+  {
+    int16_t x;
+    int iret;
+
+    // Read digital 16 bit inputs registers. Each bit is an input
+    iret = modbus_read_registers(mb_, read_registers_addr_, number_of_registers_to_read_, tab_reg_);
+    if (iret != number_of_registers_to_read_)
+    {
+      dealWithModbusError();
+      return;
+    }
+    for (int j = 0; j < number_of_registers_to_read_; j++)
+    {
+      x = switchEndianness(tab_reg_[j]);
+      robotnik_msgs::Register reg;
+      reg.id = read_registers_addr_ + j;
+      reg.value = x;
+      registers_.registers.push_back(reg);
+    }
   }
 
   void deviceStatus(diagnostic_updater::DiagnosticStatusWrapper& status)
@@ -533,12 +585,12 @@ public:
   bool write_digital_output_srv(robotnik_msgs::set_digital_output::Request& req,
                                 robotnik_msgs::set_digital_output::Response& res)
   {
-    pthread_mutex_lock(&lock_);
+    // pthread_mutex_lock(&lock_);
 
-    int iret;
+    int iret = -1;
     uint16_t register_value, shift_bit;  // register value, bit
     int out = req.output;
-
+    // ROS_INFO("modbus_io::write_digital_output_srv: out %d to %d", out, req.value);
     if (out <= 0)
     {
       if (req.value)
@@ -552,12 +604,12 @@ public:
         ROS_DEBUG("modbus_io::write_digital_output_srv: ALL OUTPUTS DISABLED (out = %d)", out);
       }
       register_value = switchEndianness(register_value);
-        iret = modbus_write_registers(mb_, digital_outputs_addr_, 5, dout_);
-        if (iret != 5)
-        {
-          dealWithModbusError();
-          return false;
-        }
+      iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
+      if (iret != number_of_outputs_)
+      {
+        dealWithModbusError();
+        res.ret = false;
+      }
     }
     else
     {
@@ -565,10 +617,10 @@ public:
       if (req.output > this->digital_outputs_ - 1)
       {
         res.ret = false;
-        ROS_ERROR("modbus_io::write_digital_output_srv: OUTPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output + 1,
+        ROS_ERROR_THROTTLE(10, "modbus_io::write_digital_output_srv: OUTPUT NUMBER %d OUT OF RANGE [1 -> %d]", req.output + 1,
                   this->digital_outputs_);
         pthread_mutex_unlock(&lock_);
-        return false;
+        res.ret = false;
       }
       else
       {
@@ -588,11 +640,14 @@ public:
 
         register_value = switchEndianness(register_value);
         dout_[base_address] = register_value;
-        iret = modbus_write_registers(mb_, digital_outputs_addr_, 5, dout_);
-        if (iret != 5)
+        iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
+        // ROS_INFO("modbus_io::write_digital_output_srv service request: OUTPUT=%d, VALUE=%d, address = %d",
+        // (int)req.output + 1,
+        //        (int)req.value,digital_outputs_addr_);
+        if (iret != number_of_outputs_)
         {
           dealWithModbusError();
-          return false;
+          res.ret = false;
         }
       }
     }
@@ -604,31 +659,56 @@ public:
     {
       res.ret = true;
     }
-    pthread_mutex_unlock(&lock_);
-    return res.ret;
+    // pthread_mutex_unlock(&lock_);
+    return true;
   }
 
+  // Writes registers by using function modbus_write_register
   bool set_modbus_register_cb(robotnik_msgs::set_modbus_register::Request& req,
                               robotnik_msgs::set_modbus_register::Response& res)
   {
+    res.ret = false;
+
+    int iret = modbus_write_register(mb_, req.address, (uint16_t)req.value);
+    if (iret != number_of_outputs_)
+    {
+      dealWithModbusError();
+      res.ret = false;
+    }
+    res.ret = true;
+
+    return true;
+  }
+
+  // Writes registers by using function modbus_write_registers based on initial digital_outputs_addr_
+  bool set_modbus_registers_cb(robotnik_msgs::set_modbus_register::Request& req,
+                               robotnik_msgs::set_modbus_register::Response& res)
+  {
     int reg = req.address - digital_outputs_addr_;
-    int dout_length = sizeof(dout_)/sizeof(*dout_);
-    if(reg>0 && reg<dout_length){
-      dout_[reg] = (uint16_t) req.value;
-      int iret = modbus_write_registers(mb_, digital_outputs_addr_, 5, dout_);
-      if (iret != 5)
+    int dout_length = number_of_outputs_;  // sizeof(*dout_);
+    // ROS_WARN("modbus_io::set_modbus_register_cb: reg %d to %d", req.address, req.value);
+    res.ret = false;
+
+    if (reg > 0 && reg < dout_length)
+    {
+      dout_[reg] = switchEndianness((uint16_t)req.value);
+      int iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
+      // ROS_INFO("modbus_io::set_modbus_registers_cb: reg = %d, address = %d, value = %x", reg,
+      // digital_outputs_addr_+reg, dout_[reg] );
+      if (iret != number_of_outputs_)
       {
         dealWithModbusError();
         res.ret = false;
-        return true;
       }
-      res.ret = true;
-      return true;
-    }else{
-      res.ret = false;
-      return true;
+      else
+        res.ret = true;
     }
-    
+    else
+    {
+      ROS_ERROR_THROTTLE(10, "modbus_io::set_modbus_registers_cb: register out of range: reg = %d, length allowed = %d", reg,
+                dout_length);
+    }
+    return true;
   }
 
   bool get_modbus_register_cb(robotnik_msgs::get_modbus_register::Request& req,
