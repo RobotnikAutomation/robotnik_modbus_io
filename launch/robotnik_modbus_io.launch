@@ -10,7 +10,7 @@
  	 <param name="digital_outputs" value="80"/>
 	 <param name="big_endian" value="false"/>
 	 <param name="slave_number" value="255"/>
-	 
+	 <param name="words_to_read" value="2"/>
   </node>
 
 </launch>

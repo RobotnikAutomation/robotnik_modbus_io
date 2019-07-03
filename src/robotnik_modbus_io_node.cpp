@@ -64,7 +64,8 @@
 
 #define MODBUS_DESIRED_FREQ 1.0
 
-#define SLAVE_DEFAULT_NUMBER 255
+#define SLAVE_DEFAULT_NUMBER 1
+#define MODBUS_DEFAULT_NUMBER_WORDS_TO_READ 20
 #define MODBUS_DEFAULT_DIGITAL_OUTPUTS 80
 #define MODBUS_DEFAULT_DIGITAL_INPUTS 80
 #define MODBUS_DEFAULT_ANALOG_OUTPUTS 2
@@ -117,6 +118,7 @@ public:
   int digital_outputs_addr_;
   bool big_endian_;
   int slave_number_;
+  int words_to_read_;
 
   // Error counters and flags
   int error_count_;
@@ -179,6 +181,8 @@ public:
     private_node_handle_.param<bool>("big_endian", big_endian_, MODBUS_DEFAULT_BIG_ENDIAN);
     
     private_node_handle_.param("slave_number", slave_number_, SLAVE_DEFAULT_NUMBER);
+    
+    private_node_handle_.param("words_to_read", words_to_read_, MODBUS_DEFAULT_NUMBER_WORDS_TO_READ);
     
     // Checks the min num of digital outputs
     /*if(digital_outputs_ < MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS){
@@ -243,7 +247,7 @@ public:
     reading_.analog_inputs.resize(analog_inputs_);
     max_delay_ = 1.0 / MODBUS_DESIRED_FREQ;
 
-    registers_for_io_ = 2;
+    registers_for_io_ = words_to_read_;
     dout_ = new uint16_t[5];
 
     // Initializes to zero the output data vector
