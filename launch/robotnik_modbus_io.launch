@@ -6,8 +6,8 @@
      <param name="port" value="502"/>
   	 <param name="digital_inputs_addr" value="0" />
  	 <param name="digital_outputs_addr" value="1999"/> 
- 	 <param name="digital_inputs" value="400"/>
- 	 <param name="digital_outputs" value="80"/>
+ 	 <param name="digital_inputs" value="3"/>
+ 	 <param name="digital_outputs" value="1"/>
 	 <param name="big_endian" value="false"/>
 	 <param name="slave_number" value="255"/>
 	 <param name="words_to_read" value="2"/>
