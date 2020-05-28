@@ -443,7 +443,8 @@ public:
           }
 
           self_test_.checkTest();
-          diagnostic_.update();
+          // Idk why this causes the node to dead :s
+          //diagnostic_.update();
 
           // publish component state
           robotnik_msgs::State msg;
