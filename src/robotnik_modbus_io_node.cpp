@@ -386,7 +386,7 @@ public:
     prevtime = starttime;
     starttime = ros::Time::now().toSec();
     modbus_io_data_pub_.publish(reading_);
-    modbus_io_registers_pub_.publish(registers_);
+    //modbus_io_registers_pub_.publish(registers_);
 
     endtime = ros::Time::now().toSec();
     if (endtime - starttime > max_delay_)
