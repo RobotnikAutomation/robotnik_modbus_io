@@ -13,10 +13,10 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 
-generate_messages(
-   DEPENDENCIES
-   std_msgs  # Or other packages containing msgs
-)
+#generate_messages(
+#   DEPENDENCIES
+#   std_msgs  # Or other packages containing msgs
+#)
 
 catkin_package(
   #INCLUDE_DIRS include
