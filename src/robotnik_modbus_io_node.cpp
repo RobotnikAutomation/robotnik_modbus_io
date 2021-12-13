@@ -542,6 +542,7 @@ public:
       dealWithModbusError();
       return;
     }
+    registers_.registers.clear();
     for (int j = 0; j < number_of_registers_to_read_; j++)
     {
       x = switchEndianness(tab_reg_[j]);
