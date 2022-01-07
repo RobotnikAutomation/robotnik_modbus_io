@@ -124,6 +124,10 @@ public:
   int read_registers_addr_;
   int number_of_registers_to_read_;
   bool big_endian_;
+  bool use_watchdog_;
+  bool current_watchdog_;
+  int watchdog_register_;
+  int watchdog_bit_;
   // Flag to read full registers automatically
   bool read_modbus_registers_enabled_;
 
@@ -192,6 +196,9 @@ public:
 
     private_node_handle_.param<bool>("big_endian", big_endian_, MODBUS_DEFAULT_BIG_ENDIAN);
     private_node_handle_.param<bool>("read_modbus_registers_enabled", read_modbus_registers_enabled_, false);
+    private_node_handle_.param<bool>("use_watchdog", use_watchdog_, false);
+    private_node_handle_.param<int>("watchdog_register", watchdog_register_, 20);
+    private_node_handle_.param<int>("watchdog_bit", watchdog_bit_, 7);
     // Checks the min num of digital outputs
     /*if(digital_outputs_ < MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS){
       digital_outputs_ = MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS;
@@ -296,6 +303,7 @@ public:
     freq_diag_.clear();
 
     running_ = true;
+    current_watchdog_ = 0;
 
     switchToState(robotnik_msgs::State::READY_STATE);
 
@@ -575,6 +583,14 @@ public:
     modbus_errors_++;
   }
 
+  uint16_t setBit(uint16_t reg, uint16_t bit, bool value)
+  {
+    if (value)
+      return reg | (1 << bit);
+    else
+      return reg & ~(1 << bit);
+  }
+
   //------------------------------------------------------------------
   // SERVICE WRITE DIGITAL OUTPUT
   // req.output (int8)
@@ -605,6 +621,10 @@ public:
         ROS_DEBUG("modbus_io::write_digital_output_srv: ALL OUTPUTS DISABLED (out = %d)", out);
       }
       register_value = switchEndianness(register_value);
+      if (use_watchdog_ == true) {
+        current_watchdog_ != current_watchdog_;
+        dout_[watchdog_register_] = setBit(dout_[watchdog_register_], watchdog_bit_, current_watchdog_);
+      }
       iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
       if (iret != number_of_outputs_)
       {
@@ -641,6 +661,10 @@ public:
 
         register_value = switchEndianness(register_value);
         dout_[base_address] = register_value;
+        if (use_watchdog_ == true) {
+          current_watchdog_ != current_watchdog_;
+          dout_[watchdog_register_] = setBit(dout_[watchdog_register_], watchdog_bit_, current_watchdog_);
+        }
         iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
         // ROS_INFO("modbus_io::write_digital_output_srv service request: OUTPUT=%d, VALUE=%d, address = %d",
         // (int)req.output + 1,
@@ -669,8 +693,13 @@ public:
                               robotnik_msgs::set_modbus_register::Response& res)
   {
     res.ret = false;
+    uint16_t req_value = (uint16_t)req.value;
 
-    int iret = modbus_write_register(mb_, req.address, (uint16_t)req.value);
+    if (use_watchdog_ == true && req.address == watchdog_register_) {
+      current_watchdog_ != current_watchdog_;
+      req_value = setBit(req_value, watchdog_bit_, current_watchdog_);
+    }
+    int iret = modbus_write_register(mb_, req.address, req_value);
     if (iret != number_of_outputs_)
     {
       dealWithModbusError();
@@ -693,6 +722,10 @@ public:
     if (reg > 0 && reg < dout_length)
     {
       dout_[reg] = switchEndianness((uint16_t)req.value);
+      if (use_watchdog_ == true) {
+        current_watchdog_ != current_watchdog_;
+        dout_[watchdog_register_] = setBit(dout_[watchdog_register_], watchdog_bit_, current_watchdog_);
+      }
       int iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
       // ROS_INFO("modbus_io::set_modbus_registers_cb: reg = %d, address = %d, value = %x", reg,
       // digital_outputs_addr_+reg, dout_[reg] );
