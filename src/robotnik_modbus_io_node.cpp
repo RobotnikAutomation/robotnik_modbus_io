@@ -394,15 +394,14 @@ public:
           ROS_WARN_THROTTLE(5, "modbus_io::read_and_publish: watchdog_register_ not found, unable to write watchdog in register");
         }
 
-        // int iret = modbus_write_register(mb_, watchdog_register_, output_register_value);
-        int iret = modbus_write_register(mb_, watchdog_register_, registers_iterator->value);
+        int iret = modbus_write_register(mb_, watchdog_register_, output_register_value);
         ROS_WARN("modbus_io::read_and_publish: number_of_outputs_ is %d", number_of_outputs_);
         ROS_WARN("modbus_io::read_and_publish: watchdog_register_ is %d", watchdog_register_);
         ROS_WARN("modbus_io::read_and_publish: output_register_value is %u", (unsigned int)output_register_value);
         ROS_WARN("modbus_io::read_and_publish: registers_iterator->id is %d", registers_iterator->id);
         ROS_WARN("modbus_io::read_and_publish: registers_iterator->value is %u", (unsigned int)registers_iterator->value);
         ROS_WARN("modbus_io::read_and_publish: iret is %d", iret);
-        if (iret != number_of_outputs_)
+        if (iret != 1)
         {
           dealWithModbusError();
         }
@@ -730,6 +729,7 @@ public:
     //   req_value = setBit(req_value, watchdog_bit_, current_watchdog_);
     // }
     int iret = modbus_write_register(mb_, req.address, req_value);
+    ROS_WARN("modbus_io::set_modbus_register_cb: iret is %d", iret);
     if (iret != number_of_outputs_)
     {
       dealWithModbusError();
@@ -759,6 +759,7 @@ public:
       int iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
       // ROS_INFO("modbus_io::set_modbus_registers_cb: reg = %d, address = %d, value = %x", reg,
       // digital_outputs_addr_+reg, dout_[reg] );
+      ROS_WARN("modbus_io::set_modbus_registers_cb: iret is %d", iret);
       if (iret != number_of_outputs_)
       {
         dealWithModbusError();
@@ -859,3 +860,4 @@ int main(int argc, char** argv)
 
   return (0);
 }
+
