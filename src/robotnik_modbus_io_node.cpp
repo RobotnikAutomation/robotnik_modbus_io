@@ -387,7 +387,7 @@ public:
         if (registers_iterator != registers_.registers.end())
         {
           ROS_WARN("modbus_io::read_and_publish: current_watchdog_ was %d", current_watchdog_);
-          current_watchdog_ != current_watchdog_;
+          current_watchdog_ = !current_watchdog_;
           ROS_WARN("modbus_io::read_and_publish: current_watchdog_ is %d", current_watchdog_);
           output_register_value = setBit(registers_iterator->value, watchdog_bit_, current_watchdog_);
         }
