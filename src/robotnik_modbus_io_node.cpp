@@ -617,16 +617,21 @@ public:
     ROS_WARN("setBit::reg is %u", reg);
     ROS_WARN("setBit::bit is %u", bit);
     ROS_WARN("setBit::value is %d", value);
-    if (value)
-    {
-      ROS_WARN("setBit:: modified reg is %u", reg | (1 << bit));
-      return reg | (1 << bit);
-    }
-    else
-    {
-      ROS_WARN("setBit:: modified reg is %u", reg & ~(1 << bit));
-      return reg & ~(1 << bit);
-    }
+    uint16_t new_reg;
+    new_reg ^= 1 << bit;
+    ROS_WARN("setBit:: modified reg is %u", new_reg);
+    return new_reg;
+    // if (value)
+    // {
+    //
+    //   ROS_WARN("setBit:: modified reg is %u", reg | (1 << bit));
+    //   return reg | (1 << bit);
+    // }
+    // else
+    // {
+    //   ROS_WARN("setBit:: modified reg is %u", reg & ~(1 << bit));
+    //   return reg & ~(1 << bit);
+    // }
   }
 
   //------------------------------------------------------------------
