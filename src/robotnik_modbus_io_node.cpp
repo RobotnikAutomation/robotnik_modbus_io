@@ -619,13 +619,13 @@ public:
     ROS_WARN("setBit::value is %d", value);
     if (value)
     {
-      return reg | (1 << bit);
       ROS_WARN("setBit:: modified reg is %u", reg | (1 << bit));
+      return reg | (1 << bit);
     }
     else
     {
-      return reg & ~(1 << bit);
       ROS_WARN("setBit:: modified reg is %u", reg & ~(1 << bit));
+      return reg & ~(1 << bit);
     }
   }
 
