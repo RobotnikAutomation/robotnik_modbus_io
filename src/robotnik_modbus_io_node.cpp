@@ -614,10 +614,19 @@ public:
 
   uint16_t setBit(uint16_t reg, uint16_t bit, bool value)
   {
+    ROS_WARN("setBit::reg is &u", reg);
+    ROS_WARN("setBit::bit is &u", bit);
+    ROS_WARN("setBit::value is &d", value);
     if (value)
+    {
       return reg | (1 << bit);
+      ROS_WARN("setBit:: modified reg is &u", reg | (1 << bit));
+    }
     else
+    {
       return reg & ~(1 << bit);
+      ROS_WARN("setBit:: modified reg is &u", reg & ~(1 << bit));
+    }
   }
 
   //------------------------------------------------------------------
@@ -860,4 +869,3 @@ int main(int argc, char** argv)
 
   return (0);
 }
-
