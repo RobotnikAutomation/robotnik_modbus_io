@@ -377,6 +377,36 @@ public:
     if (read_modbus_registers_enabled_)
     {
       getIntData(registers_);
+
+      if (use_watchdog_ == true)
+      {
+        uint16_t output_register_value;
+        auto registers_iterator =
+          std::find_if(registers_.registers.begin(), registers_.registers.end(),
+                     [&](const robotnik_msgs::Register& output_register) { return (output_register.id == watchdog_register_); });
+        if (registers_iterator != registers_.registers.end())
+        {
+          current_watchdog_ != current_watchdog_;
+          output_register_value = setBit(registers_iterator->value, watchdog_bit_, current_watchdog_);
+        }
+        else
+        {
+          ROS_WARN_THROTTLE(5, "modbus_io::read_and_publish: watchdog_register_ not found, unable to write watchdog in register");
+        }
+
+        // int iret = modbus_write_register(mb_, watchdog_register_, output_register_value);
+        int iret = modbus_write_register(mb_, watchdog_register_, registers_iterator->value);
+        ROS_WARN("modbus_io::read_and_publish: number_of_outputs_ is %d", number_of_outputs_);
+        ROS_WARN("modbus_io::read_and_publish: watchdog_register_ is %d", watchdog_register_);
+        ROS_WARN("modbus_io::read_and_publish: output_register_value is %u", (unsigned int)output_register_value);
+        ROS_WARN("modbus_io::read_and_publish: registers_iterator->id is %d", registers_iterator->id);
+        ROS_WARN("modbus_io::read_and_publish: registers_iterator->value is %u", (unsigned int)registers_iterator->value);
+        ROS_WARN("modbus_io::read_and_publish: iret is %d", iret);
+        if (iret != number_of_outputs_)
+        {
+          dealWithModbusError();
+        }
+      }
     }
     else
     {
@@ -621,10 +651,10 @@ public:
         ROS_DEBUG("modbus_io::write_digital_output_srv: ALL OUTPUTS DISABLED (out = %d)", out);
       }
       register_value = switchEndianness(register_value);
-      if (use_watchdog_ == true) {
-        current_watchdog_ != current_watchdog_;
-        dout_[watchdog_register_] = setBit(dout_[watchdog_register_], watchdog_bit_, current_watchdog_);
-      }
+      // if (use_watchdog_ == true) {
+      //   current_watchdog_ != current_watchdog_;
+      //   dout_[watchdog_register_] = setBit(dout_[watchdog_register_], watchdog_bit_, current_watchdog_);
+      // }
       iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
       if (iret != number_of_outputs_)
       {
@@ -661,10 +691,10 @@ public:
 
         register_value = switchEndianness(register_value);
         dout_[base_address] = register_value;
-        if (use_watchdog_ == true) {
-          current_watchdog_ != current_watchdog_;
-          dout_[watchdog_register_] = setBit(dout_[watchdog_register_], watchdog_bit_, current_watchdog_);
-        }
+        // if (use_watchdog_ == true) {
+        //   current_watchdog_ != current_watchdog_;
+        //   dout_[watchdog_register_] = setBit(dout_[watchdog_register_], watchdog_bit_, current_watchdog_);
+        // }
         iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
         // ROS_INFO("modbus_io::write_digital_output_srv service request: OUTPUT=%d, VALUE=%d, address = %d",
         // (int)req.output + 1,
@@ -695,10 +725,10 @@ public:
     res.ret = false;
     uint16_t req_value = (uint16_t)req.value;
 
-    if (use_watchdog_ == true && req.address == watchdog_register_) {
-      current_watchdog_ != current_watchdog_;
-      req_value = setBit(req_value, watchdog_bit_, current_watchdog_);
-    }
+    // if (use_watchdog_ == true && req.address == watchdog_register_) {
+    //   current_watchdog_ != current_watchdog_;
+    //   req_value = setBit(req_value, watchdog_bit_, current_watchdog_);
+    // }
     int iret = modbus_write_register(mb_, req.address, req_value);
     if (iret != number_of_outputs_)
     {
@@ -722,10 +752,10 @@ public:
     if (reg > 0 && reg < dout_length)
     {
       dout_[reg] = switchEndianness((uint16_t)req.value);
-      if (use_watchdog_ == true) {
-        current_watchdog_ != current_watchdog_;
-        dout_[watchdog_register_] = setBit(dout_[watchdog_register_], watchdog_bit_, current_watchdog_);
-      }
+      // if (use_watchdog_ == true) {
+      //   current_watchdog_ != current_watchdog_;
+      //   dout_[watchdog_register_] = setBit(dout_[watchdog_register_], watchdog_bit_, current_watchdog_);
+      // }
       int iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
       // ROS_INFO("modbus_io::set_modbus_registers_cb: reg = %d, address = %d, value = %x", reg,
       // digital_outputs_addr_+reg, dout_[reg] );
