@@ -77,8 +77,6 @@
 
 #define MODBUS_DEFAULT_ANALOG_INPUT_DIVISOR 30000.0
 #define MODBUS_DEFAULT_ANALOG_INPUT_MULTIPLIER 10.0
-#define MODBUS_MAX_COMM_ERRORS 10     // Max number of erros in communication to consider an error
-#define MODBUS_ERROR_RECOVERY_TIME 5  // Tries the recovery every X seconds
 
 bool MODBUS_DEFAULT_BIG_ENDIAN =
     false;  // defines endianness of the modbus device. false = little endian (PC), true = big endian
@@ -128,6 +126,11 @@ public:
   bool current_watchdog_;
   int watchdog_register_;
   int watchdog_bit_;
+
+  int modbus_max_comm_errors_; // Num of consecutive errors to consider an communication issue
+  double modbus_error_time_window_; // Max time between two consecutive errors before restarting counter
+  double modbus_error_recovery_time_; // Seconds to wait before reconnection attempts
+
   // Flag to read full registers automatically
   bool read_modbus_registers_enabled_;
 
@@ -158,6 +161,7 @@ public:
   float max_delay_;
   //! num of erros in the modbus communication
   int modbus_errors_;
+  ros::Time last_modbus_error_time_;
   //! Saves the time of the error
   ros::Time communication_error_time;
 
@@ -199,6 +203,11 @@ public:
     private_node_handle_.param<bool>("use_watchdog", use_watchdog_, false);
     private_node_handle_.param<int>("watchdog_register", watchdog_register_, 20);
     private_node_handle_.param<int>("watchdog_bit", watchdog_bit_, 7);
+
+    private_node_handle_.param<int>("modbus_max_comm_errors", modbus_max_comm_errors_, 10);
+    private_node_handle_.param<double>("modbus_error_time_window", modbus_error_time_window_, 5);
+    private_node_handle_.param<double>("modbus_error_recovery_time", modbus_error_recovery_time_, 5);
+
     // Checks the min num of digital outputs
     /*if(digital_outputs_ < MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS){
       digital_outputs_ = MODBUS_DEFAULT_MIN_DIGITAL_OUTPUTS;
@@ -278,6 +287,7 @@ public:
 
     previous_state = state = robotnik_msgs::State::INIT_STATE;
     modbus_errors_ = 0;
+    last_modbus_error_time_ == ros::Time::now();
   }
 
   // Destructor
@@ -449,15 +459,20 @@ public:
             case robotnik_msgs::State::READY_STATE:
               read_and_publish();
 
-              if (modbus_errors_ > MODBUS_MAX_COMM_ERRORS)
+              if (modbus_errors_ > modbus_max_comm_errors_)
                 switchToState(robotnik_msgs::State::FAILURE_STATE);
+
+              if (modbus_errors_ > 0 && (ros::Time::now() - last_modbus_error_time_).toSec() > modbus_error_time_window_)
+              {
+                modbus_errors_ = 0;
+              }
 
               break;
 
             case robotnik_msgs::State::FAILURE_STATE:
               t_now = ros::Time::now();
 
-              if ((t_now - communication_error_time).toSec() > MODBUS_ERROR_RECOVERY_TIME)
+              if ((t_now - communication_error_time).toSec() > modbus_error_recovery_time_)
               {
                 ROS_INFO("modbus_io::spin: trying to recover");
                 disconnectModbus();
@@ -604,6 +619,7 @@ public:
   {
     ROS_WARN("modbus_io::error: %s (errorno: %d)", modbus_strerror(errno), errno);
     modbus_errors_++;
+    last_modbus_error_time_ == ros::Time::now();
   }
 
   uint16_t setBit(uint16_t reg, uint16_t bit, bool value)

@@ -5,7 +5,7 @@
     <param name="ip_address" type="string" value="192.168.0.250" />
     <param name="port" value="502"/>
     <param name="digital_inputs_addr" value="999" />
-    <param name="digital_outputs_addr" value="1999"/> 
+    <param name="digital_outputs_addr" value="1999"/>
     <param name="digital_inputs" value="400"/>
     <param name="digital_outputs" value="80"/>
     <param name="big_endian" value="false"/>
@@ -13,6 +13,10 @@
     <param name="use_watchdog" value="false"/>
     <param name="watchdog_register" value="20"/>
     <param name="watchdog_bit" value="7"/>
+
+    <param name="modbus_max_comm_errors" value="10"/>
+    <param name="modbus_error_time_window" value="5"/>
+    <param name="modbus_error_recovery_time" value="5"/>
   </node>
 
 </launch>
