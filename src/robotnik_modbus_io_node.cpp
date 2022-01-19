@@ -287,7 +287,7 @@ public:
 
     previous_state = state = robotnik_msgs::State::INIT_STATE;
     modbus_errors_ = 0;
-    last_modbus_error_time_ == ros::Time::now();
+    last_modbus_error_time_ = ros::Time::now();
   }
 
   // Destructor
@@ -464,6 +464,7 @@ public:
 
               if (modbus_errors_ > 0 && (ros::Time::now() - last_modbus_error_time_).toSec() > modbus_error_time_window_)
               {
+                ROS_INFO("modbus_io::spin: modbus_errors_ counter was %d. Resetting after %f seconds without errors", modbus_errors_, (ros::Time::now() - last_modbus_error_time_).toSec());
                 modbus_errors_ = 0;
               }
 
