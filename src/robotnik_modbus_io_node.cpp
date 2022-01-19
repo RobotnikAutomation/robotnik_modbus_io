@@ -620,7 +620,7 @@ public:
   {
     ROS_WARN("modbus_io::error: %s (errorno: %d)", modbus_strerror(errno), errno);
     modbus_errors_++;
-    last_modbus_error_time_ == ros::Time::now();
+    last_modbus_error_time_ = ros::Time::now();
   }
 
   uint16_t setBit(uint16_t reg, uint16_t bit, bool value)
