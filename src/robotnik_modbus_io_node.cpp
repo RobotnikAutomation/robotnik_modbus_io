@@ -427,7 +427,7 @@ public:
     prevtime = starttime;
     starttime = ros::Time::now().toSec();
     modbus_io_data_pub_.publish(reading_);
-    modbus_io_registers_pub_.publish(registers_);
+    //modbus_io_registers_pub_.publish(registers_);
 
     endtime = ros::Time::now().toSec();
     if (endtime - starttime > max_delay_)
@@ -490,7 +490,8 @@ public:
           }
 
           self_test_.checkTest();
-          diagnostic_.update();
+          // Idk why this causes the node to dead :s
+          //diagnostic_.update();
 
           // publish component state
           robotnik_msgs::State msg;
