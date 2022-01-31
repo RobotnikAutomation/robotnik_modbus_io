@@ -275,7 +275,7 @@ public:
     registers_.registers.resize(number_of_registers_to_read_);
     max_delay_ = 1.0 / MODBUS_DESIRED_FREQ;
 
-    registers_for_io_ = 20;
+    registers_for_io_ = 25;
     number_of_outputs_ = 5;
     dout_ = new uint16_t[number_of_outputs_];
 
@@ -733,7 +733,7 @@ public:
     uint16_t req_value = (uint16_t)req.value;
 
     int iret = modbus_write_register(mb_, req.address, req_value);
-    if (iret != number_of_outputs_)
+    if (iret != 1)
     {
       dealWithModbusError();
       res.ret = false;
