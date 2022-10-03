@@ -749,24 +749,34 @@ public:
     return true;
   }
 
-  // Writes registers by using function modbus_write_register
   bool set_modbus_register_bit_cb(robotnik_msgs::set_modbus_register_bit::Request& req,
                               robotnik_msgs::set_modbus_register_bit::Response& res)
   {
     res.ret = false;
 
-    uint16_t decimal_value = static_cast<uint16_t>(pow(2, req.bit) * static_cast<int>(req.value));
+    uint16_t output_register_value{};
+    auto registers_iterator =
+      std::find_if(registers_.registers.begin(), registers_.registers.end(),
+                 [&](const robotnik_msgs::Register& output_register) { return (output_register.id == req.address); });
+    if (registers_iterator != registers_.registers.end())
+    {
+      output_register_value = setBit(registers_iterator->value, req.bit, req.value);
+    }
+    else
+    {
+      ROS_WARN_THROTTLE(5, "modbus_io::read_and_publish: register %d not found", req.address);
+      return true;
+    }
 
-    std::bitset<16> bitmask = std::bitset<16>(decimal_value).flip();
-
-    int iret = modbus_mask_write_register(mb_, req.address, static_cast<uint16_t>(bitmask.to_ulong()), decimal_value);
+    int iret = modbus_write_register(mb_, req.address, output_register_value);
     if (iret != 1)
     {
       dealWithModbusError();
       res.ret = false;
+      return true;
     }
-    res.ret = true;
 
+    res.ret = true;
     return true;
   }
 
