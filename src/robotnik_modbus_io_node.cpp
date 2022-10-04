@@ -634,11 +634,11 @@ public:
   {
     if (value)
     {
-      return reg & ~(1 << bit);
+      return reg | (1 << bit);
     }
     else
     {
-      return reg | (1 << bit);
+      return reg & ~(1 << bit);
     }
   }
 
