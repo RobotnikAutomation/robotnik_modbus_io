@@ -9,7 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
     diagnostic_updater
     std_srvs
     robotnik_msgs
-    std_msgs    
+    std_msgs
 )
 
 

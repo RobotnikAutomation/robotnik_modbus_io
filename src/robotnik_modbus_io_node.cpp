@@ -57,6 +57,7 @@
 #include <robotnik_msgs/inputs_outputs.h>
 #include <robotnik_msgs/set_digital_output.h>
 #include <robotnik_msgs/set_modbus_register.h>
+#include <robotnik_msgs/set_modbus_register_bit.h>
 #include <robotnik_msgs/get_modbus_register.h>
 #include <robotnik_msgs/State.h>
 
@@ -109,6 +110,7 @@ public:
   ros::ServiceServer modbus_io_write_digital_input_srv_;
 
   ros::ServiceServer set_modbus_register_srv_;
+  ros::ServiceServer set_modbus_register_bit_srv_;
   ros::ServiceServer set_modbus_registers_srv_;
   ros::ServiceServer get_modbus_register_srv_;
 
@@ -257,6 +259,8 @@ public:
         private_node_handle_.advertiseService("write_digital_output", &modbusNode::write_digital_output_srv, this);
     set_modbus_register_srv_ =
         private_node_handle_.advertiseService("set_modbus_register", &modbusNode::set_modbus_register_cb, this);
+    set_modbus_register_bit_srv_ =
+        private_node_handle_.advertiseService("set_modbus_register_bit", &modbusNode::set_modbus_register_bit_cb, this);
     set_modbus_registers_srv_ =
         private_node_handle_.advertiseService("set_modbus_registers", &modbusNode::set_modbus_registers_cb, this);
     get_modbus_register_srv_ =
@@ -628,11 +632,11 @@ public:
   {
     if (value)
     {
-      return reg & ~(1 << bit);
+      return reg | (1 << bit);
     }
     else
     {
-      return reg | (1 << bit);
+      return reg & ~(1 << bit);
     }
   }
 
@@ -740,6 +744,37 @@ public:
     }
     res.ret = true;
 
+    return true;
+  }
+
+  bool set_modbus_register_bit_cb(robotnik_msgs::set_modbus_register_bit::Request& req,
+                              robotnik_msgs::set_modbus_register_bit::Response& res)
+  {
+    res.ret = false;
+
+    uint16_t output_register_value{};
+    auto registers_iterator =
+      std::find_if(registers_.registers.begin(), registers_.registers.end(),
+                 [&](const robotnik_msgs::Register& output_register) { return (output_register.id == req.address); });
+    if (registers_iterator != registers_.registers.end())
+    {
+      output_register_value = setBit(registers_iterator->value, req.bit, req.value);
+    }
+    else
+    {
+      ROS_WARN_THROTTLE(5, "modbus_io::read_and_publish: register %d not found", req.address);
+      return true;
+    }
+
+    int iret = modbus_write_register(mb_, req.address, output_register_value);
+    if (iret != 1)
+    {
+      dealWithModbusError();
+      res.ret = false;
+      return true;
+    }
+
+    res.ret = true;
     return true;
   }
 
