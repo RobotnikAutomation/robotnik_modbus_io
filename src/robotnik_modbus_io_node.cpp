@@ -37,8 +37,6 @@
 #include <cerrno>
 #include <cstdio>
 #include <csignal>
-#include <cmath>
-#include <bitset>
 
 #include <iostream>
 #include <typeinfo>
