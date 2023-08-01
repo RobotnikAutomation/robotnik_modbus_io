@@ -787,7 +787,7 @@ public:
     // ROS_WARN("modbus_io::set_modbus_register_cb: reg %d to %d", req.address, req.value);
     res.ret = false;
 
-    if (reg > 0 && reg < dout_length)
+    if (reg >= 0 && reg < dout_length)
     {
       dout_[reg] = switchEndianness((uint16_t)req.value);
       int iret = modbus_write_registers(mb_, digital_outputs_addr_, number_of_outputs_, dout_);
